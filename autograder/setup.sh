@@ -8,6 +8,11 @@ set -euo pipefail
 # ── 1. System dependencies ──────────────────────────────────────────
 apt-get update && apt-get install -y cmake build-essential git
 
+# Ensure 'python' command exists (Gradescope containers only have python3)
+if ! command -v python &> /dev/null; then
+    ln -s "$(which python3)" /usr/local/bin/python
+fi
+
 # ── 2. Upgrade pip ──────────────────────────────────────────────────
 pip install --upgrade pip
 
