@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# run_autograder — Gradescope entry point
+# Locates the student's submitted zip + quadcopter_strategies.py,
+# prepares the model directory, and runs the grading script.
+
+set -euo pipefail
+
+SUBMISSION_DIR="/autograder/submission"
+RESULTS_DIR="/autograder/results"
+SOURCE_DIR="/autograder/source"
+WORK_DIR="/autograder/work"
+
+mkdir -p "$RESULTS_DIR" "$WORK_DIR"
+
+# ── Helper: write an error result and exit ──────────────────────────
+write_error() {
+    local msg="$1"
+    cat > "$RESULTS_DIR/results.json" <<EOJSON
+{
+  "output": "$msg",
+  "tests": [
+    {
+      "name": "Race Evaluation",
+      "output": "$msg",
+      "status": "failed"
+    }
+  ]
+}
+EOJSON
+    exit 0
+}
+
+# ── 1. Locate the student's zip file ───────────────────────────────
+ZIP_FILE=$(find "$SUBMISSION_DIR" -maxdepth 1 -name '*.zip' | head -n 1)
+if [ -z "$ZIP_FILE" ]; then
+    write_error "No .zip file found in submission. Please upload your model directory as a zip."
+fi
+
+# ── 2. Locate quadcopter_strategies.py ──────────────────────────────
+STRATEGIES_FILE=$(find "$SUBMISSION_DIR" -maxdepth 1 -name 'quadcopter_strategies.py' | head -n 1)
+if [ -z "$STRATEGIES_FILE" ]; then
+    write_error "quadcopter_strategies.py not found in submission. Please upload it alongside your model zip."
+fi
+
+# ── 3. Unzip the model directory ────────────────────────────────────
+MODEL_DIR="$WORK_DIR/model"
+rm -rf "$MODEL_DIR"
+mkdir -p "$MODEL_DIR"
+unzip -q -o "$ZIP_FILE" -d "$MODEL_DIR"
+
+# If the zip contained a single top-level folder, descend into it
+SUBDIRS=( "$MODEL_DIR"/*/ )
+if [ ${#SUBDIRS[@]} -eq 1 ] && [ -d "${SUBDIRS[0]}" ]; then
+    MODEL_DIR="${SUBDIRS[0]%/}"
+fi
+
+# ── 4. Copy quadcopter_strategies.py into the project source tree ──
+STRATEGIES_DEST="$SOURCE_DIR/src/isaac_quad_sim2real/tasks/race/config/crazyflie/quadcopter_strategies.py"
+cp "$STRATEGIES_FILE" "$STRATEGIES_DEST"
+
+# ── 5. Find the latest model checkpoint ─────────────────────────────
+CHECKPOINT=""
+# Prefer best_model.pt if it exists
+if [ -f "$MODEL_DIR/best_model.pt" ]; then
+    CHECKPOINT="$MODEL_DIR/best_model.pt"
+else
+    # Find the model_*.pt with the highest number
+    CHECKPOINT=$(find "$MODEL_DIR" -maxdepth 1 -name 'model_*.pt' | sort -t '_' -k2 -n | tail -n 1)
+fi
+
+if [ -z "$CHECKPOINT" ]; then
+    write_error "No model checkpoint (model_*.pt or best_model.pt) found in the uploaded zip."
+fi
+
+# ── 6. Locate agent config (params/agent.pkl) ──────────────────────
+AGENT_PKL=""
+if [ -f "$MODEL_DIR/params/agent.pkl" ]; then
+    AGENT_PKL="$MODEL_DIR/params/agent.pkl"
+elif [ -f "$MODEL_DIR/../params/agent.pkl" ]; then
+    AGENT_PKL="$MODEL_DIR/../params/agent.pkl"
+fi
+
+# ── 7. Run the evaluation script ───────────────────────────────────
+cd "$SOURCE_DIR"
+
+python autograder/grade_race.py \
+    --checkpoint "$CHECKPOINT" \
+    --agent_pkl "$AGENT_PKL" \
+    --results_path "$RESULTS_DIR/results.json" \
+    2>&1 | tee "$WORK_DIR/grading_log.txt" || true
+
+# ── 8. Ensure results.json exists (fallback) ───────────────────────
+if [ ! -f "$RESULTS_DIR/results.json" ]; then
+    write_error "Grading script did not produce results. Check grading_log.txt for details."
+fi
