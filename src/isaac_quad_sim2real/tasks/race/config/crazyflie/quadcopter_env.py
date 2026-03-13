@@ -10,7 +10,7 @@ import numpy as np
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation, ArticulationCfg, RigidObject, RigidObjectCfg
-from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
+from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg, ViewerCfg
 from isaaclab.envs.ui import BaseEnvWindow
 from isaaclab.markers import VisualizationMarkers
 from isaaclab.markers.visualization_markers import VisualizationMarkersCfg
@@ -144,6 +144,13 @@ class QuadcopterEnvCfg(DirectRLEnvCfg):
     pid_loop_decimation = sim_rate_hz // pid_loop_rate_hz
 
     ui_window_class_type = QuadcopterEnvWindow
+
+    # --- ADD THIS VIEWER BLOCK HERE ---
+    viewer = ViewerCfg(
+        eye=(0.0, -6.0, 3.0),    # 3 meters to the side, 1.5 meters up
+        lookat=(0.0, 0.0, 1)   # Looking right at the spawn point
+    )
+    # ----------------------------------
 
     # simulation
     sim: SimulationCfg = SimulationCfg(

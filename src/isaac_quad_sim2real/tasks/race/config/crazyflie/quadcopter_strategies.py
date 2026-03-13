@@ -72,34 +72,62 @@ class DefaultQuadcopterStrategy:
         if your PPO implementation works. You should delete it or heavily modify it once you begin the racing task."""
 
         # TODO ----- START ----- Define the tensors required for your custom reward structure
-        # 1. GATE DETECTION: Widen the bubble to 0.6m so it registers high-speed fly-throughs
+        # 1. GATE DETECTION: Widen the bubble to 0.8m 
         dist_to_gate = torch.linalg.norm(self.env._pose_drone_wrt_gate, dim=1)
-        gate_passed = dist_to_gate < 0.6
+        gate_passed = dist_to_gate < 0.8
         ids_gate_passed = torch.where(gate_passed)[0]
         self.env._idx_wp[ids_gate_passed] = (self.env._idx_wp[ids_gate_passed] + 1) % self.env._waypoints.shape[0]
 
-        # Update target positions for the drones that passed a gate
+        # Update target positions
         self.env._desired_pos_w[ids_gate_passed, :2] = self.env._waypoints[self.env._idx_wp[ids_gate_passed], :2]
         self.env._desired_pos_w[ids_gate_passed, 2] = self.env._waypoints[self.env._idx_wp[ids_gate_passed], 2]
 
-        # 2. PROGRESS REWARD: Reward the drone for how fast it is flying TOWARD the gate
-        # Get direction to gate in the drone's body frame
-        gate_pos_b, _ = subtract_frame_transforms(
-            self.env._robot.data.root_link_pos_w, 
-            self.env._robot.data.root_quat_w, 
-            self.env._desired_pos_w
-        )
-        # Normalize to get a pure direction vector
-        gate_dir_b = gate_pos_b / (torch.linalg.norm(gate_pos_b, dim=1, keepdim=True) + 1e-5)
+        # 2. PRO RACING PROGRESS: Velocity Projection + Cross-Track Error
+        curr_idx = self.env._idx_wp
+        prev_idx = (curr_idx - 1) % self.env._waypoints.shape[0]
         
-        # Velocity in body frame
-        drone_lin_vel_b = self.env._robot.data.root_com_lin_vel_b
+        curr_gate_pos = self.env._waypoints[curr_idx, :3]
+        prev_gate_pos = self.env._waypoints[prev_idx, :3]
         
-        # Dot product: This is highly positive if flying fast toward the gate, negative if flying away
-        progress_velocity = torch.sum(drone_lin_vel_b * gate_dir_b, dim=1)
+        # Calculate track direction vector
+        track_dir_raw = curr_gate_pos - prev_gate_pos
+        track_len = torch.linalg.norm(track_dir_raw, dim=1, keepdim=True) + 1e-8
+        track_dir = track_dir_raw / track_len
         
-        # Add a massive flat bonus right when it passes a gate to encourage finishing the lap
-        progress = progress_velocity + (gate_passed.float() * 20.0)
+        # Velocity reward (Clamped to a max of 8.0 m/s so it doesn't suicide for speed points)
+        drone_vel = self.env._robot.data.root_lin_vel_w
+        raw_progress_speed = torch.sum(drone_vel * track_dir, dim=1)
+        progress_speed = torch.clamp(raw_progress_speed, max=8.0)
+
+        # CROSS-TRACK ERROR: How far is the drone from the center-line?
+        # Vector from the previous gate to the drone
+        drone_to_prev = self.env._robot.data.root_link_pos_w - prev_gate_pos
+        
+        # The cross product gives us a vector perpendicular to the track. Its length is the exact distance!
+        cross_track_vec = torch.cross(drone_to_prev, track_dir.expand_as(drone_to_prev))
+        cross_track_error = torch.linalg.norm(cross_track_vec, dim=1)
+        
+        # ACTION SMOOTHNESS: Stop mashing full throttle
+        action_diff = torch.sum(torch.square(self.env._actions - self.env._previous_actions), dim=1)
+        
+        # THE NEW MAGIC FORMULA:
+        # + Points for speed along the track
+        # - Points for drifting away from the center line
+        # - Points for jerky motor commands
+        # - The ticking clock (-0.1)
+
+        # THE TWEAKED FORMULA
+        # 1. Speed is scaled down by cross_track. (e.g., if cross_track is 1m, speed reward is cut in half)
+        speed_reward = (progress_speed * 0.1) / (1.0 + cross_track_error)
+        progress = speed_reward - (cross_track_error * 0.5) - (action_diff * 0.02)
+        
+        # Flat bonus for passing
+        progress = progress + (gate_passed.float() * 2.0)
+
+        # -------------------------------------------------------------
+        # DELETED: self.env._last_distance_to_goal (No longer needed!)
+        # DELETED: tilt_penalty (Must be removed to allow power loops!)
+        # -------------------------------------------------------------
 
         # 3. CRASH DETECTION (Give it a tiny grace period to spawn)
         contact_forces = self.env._contact_sensor.data.net_forces_w
@@ -223,7 +251,7 @@ class DefaultQuadcopterStrategy:
 
         # TODO ----- START ----- Define the initial state during training after resetting an environment.
         # 1. Pick a RANDOM gate to start at so it learns the whole track simultaneously
-        waypoint_indices = torch.randint(0, self.env._waypoints.shape[0], (n_reset,), device=self.device)
+        waypoint_indices = torch.randint(0, self.env._waypoints.shape[0], (n_reset,), device=self.device, dtype=self.env._idx_wp.dtype)
 
         # Get base positions of those random gates
         x0_wp = self.env._waypoints[waypoint_indices][:, 0]
@@ -232,7 +260,7 @@ class DefaultQuadcopterStrategy:
         z_wp = self.env._waypoints[waypoint_indices][:, 2]
 
         # 2. Add Domain Randomization (Spawn them slightly offset and messy)
-        x_local = torch.empty(n_reset, device=self.device).uniform_(-2.5, -0.5) # 0.5m to 2.5m behind gate
+        x_local = torch.empty(n_reset, device=self.device).uniform_(-4.0, -0.5) # Spawn 0.5m to 6.0m behind gate (Widen the spawn distance so it learns to fly from far away!)
         y_local = torch.empty(n_reset, device=self.device).uniform_(-1.0, 1.0)  # Shifted left/right
         z_local = torch.empty(n_reset, device=self.device).uniform_(-0.5, 0.5)  # Shifted up/down
 
