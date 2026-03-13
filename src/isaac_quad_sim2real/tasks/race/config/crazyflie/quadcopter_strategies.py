@@ -74,7 +74,7 @@ class DefaultQuadcopterStrategy:
         # TODO ----- START ----- Define the tensors required for your custom reward structure
         # 1. GATE DETECTION: Widen the bubble to 0.8m 
         dist_to_gate = torch.linalg.norm(self.env._pose_drone_wrt_gate, dim=1)
-        gate_passed = dist_to_gate < 0.8
+        gate_passed = dist_to_gate < 0.4
         ids_gate_passed = torch.where(gate_passed)[0]
         self.env._idx_wp[ids_gate_passed] = (self.env._idx_wp[ids_gate_passed] + 1) % self.env._waypoints.shape[0]
 
@@ -82,47 +82,24 @@ class DefaultQuadcopterStrategy:
         self.env._desired_pos_w[ids_gate_passed, :2] = self.env._waypoints[self.env._idx_wp[ids_gate_passed], :2]
         self.env._desired_pos_w[ids_gate_passed, 2] = self.env._waypoints[self.env._idx_wp[ids_gate_passed], 2]
 
-        # 2. PRO RACING PROGRESS: Velocity Projection + Cross-Track Error
-        curr_idx = self.env._idx_wp
-        prev_idx = (curr_idx - 1) % self.env._waypoints.shape[0]
-        
-        curr_gate_pos = self.env._waypoints[curr_idx, :3]
-        prev_gate_pos = self.env._waypoints[prev_idx, :3]
-        
-        # Calculate track direction vector
-        track_dir_raw = curr_gate_pos - prev_gate_pos
-        track_len = torch.linalg.norm(track_dir_raw, dim=1, keepdim=True) + 1e-8
-        track_dir = track_dir_raw / track_len
-        
-        # Velocity reward (Clamped to a max of 8.0 m/s so it doesn't suicide for speed points)
+        # 2. PRO RACING PROGRESS
+        # Reward for making progress towards the gate, measured as the speed along the direction to the gate (encourages fast and direct flying towards the gate)
+        drone_to_gate_w = self.env._desired_pos_w - self.env._robot.data.root_link_pos_w
+        dist_to_gate = torch.linalg.norm(drone_to_gate_w, dim=1, keepdim=True) + 1e-8
+        dir_to_gate = drone_to_gate_w / dist_to_gate
+        # speed along the direction to the gate (dot product of velocity and direction to gate)
         drone_vel = self.env._robot.data.root_lin_vel_w
-        raw_progress_speed = torch.sum(drone_vel * track_dir, dim=1)
-        progress_speed = torch.clamp(raw_progress_speed, max=8.0)
+        progress_speed = torch.sum(drone_vel * dir_to_gate.squeeze(), dim=1)
 
-        # CROSS-TRACK ERROR: How far is the drone from the center-line?
-        # Vector from the previous gate to the drone
-        drone_to_prev = self.env._robot.data.root_link_pos_w - prev_gate_pos
-        
-        # The cross product gives us a vector perpendicular to the track. Its length is the exact distance!
-        cross_track_vec = torch.cross(drone_to_prev, track_dir.expand_as(drone_to_prev))
-        cross_track_error = torch.linalg.norm(cross_track_vec, dim=1)
-        
-        # ACTION SMOOTHNESS: Stop mashing full throttle
+        # Clamp the progress reward to prevent large spikes, and scale it down
+        progress = torch.clamp(progress_speed, min=-2.0, max=10.0) * 0.2
+
+        # Add a small penalty for changing actions too abruptly, to encourage smoother flying (but don't penalize it too much or it won't learn power loops!)
         action_diff = torch.sum(torch.square(self.env._actions - self.env._previous_actions), dim=1)
-        
-        # THE NEW MAGIC FORMULA:
-        # + Points for speed along the track
-        # - Points for drifting away from the center line
-        # - Points for jerky motor commands
-        # - The ticking clock (-0.1)
+        progress = progress - (action_diff * 0.005)
 
-        # THE TWEAKED FORMULA
-        # 1. Speed is scaled down by cross_track. (e.g., if cross_track is 1m, speed reward is cut in half)
-        speed_reward = (progress_speed * 0.1) / (1.0 + cross_track_error)
-        progress = speed_reward - (cross_track_error * 0.5) - (action_diff * 0.02)
-        
-        # Flat bonus for passing
-        progress = progress + (gate_passed.float() * 2.0)
+        # Bonus for passing through the gate
+        progress = progress + (gate_passed.float() * 10.0)
 
         # -------------------------------------------------------------
         # DELETED: self.env._last_distance_to_goal (No longer needed!)
