@@ -232,11 +232,17 @@ if __name__ == "__main__":
 python scripts/rsl_rl/play_race.py \
     --task Isaac-Quadcopter-Race-v0 \
     --num_envs 1 \
-    --load_run 2026-03-15_13-55-08 \
+    --load_run 2026-03-15_16-29-59 \
     --checkpoint best_model.pt \
     --video \
     --video_length 1000 \
     --headless \
     --video_name "fastest_lap_attempt_1"
 
+python scripts/rsl_rl/play_race.py \
+    --task Isaac-Quadcopter-Race-v0 \
+    --num_envs 1 \
+    --load_run 2026-03-15_16-29-59 \
+    --checkpoint best_model.pt \
+    --headless
 '''

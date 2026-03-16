@@ -157,7 +157,7 @@ class DefaultQuadcopterStrategy:
         ang_vel = self.env._robot.data.root_ang_vel_w
         spin_penalty = torch.sum(torch.square(ang_vel), dim=1) * 0.01
         # Time penalty
-        time_penalty = 0 # 0.005
+        time_penalty = 0.005 # 0.005
         # Bonus for passing through the gate
         progress = progress + (gate_passed.float() * 10.0) - (action_diff * 0.005) - spin_penalty - time_penalty
 
@@ -409,3 +409,18 @@ class DefaultQuadcopterStrategy:
         self.env._prev_y_drone_wrt_gate[env_ids] = self.env._pose_drone_wrt_gate[env_ids][:, 1].clone()
         self.env._prev_z_drone_wrt_gate[env_ids] = self.env._pose_drone_wrt_gate[env_ids][:, 2].clone()
         self.env._crashed[env_ids] = 0
+
+'''
+conda activate env_isaaclab
+export PYTHONPATH=$(pwd)
+
+
+
+python scripts/rsl_rl/train_race.py \
+--task Isaac-Quadcopter-Race-v0 \
+--num_envs 4096 \
+--max_iterations 1000 \
+--headless \
+--logger wandb     
+
+'''
