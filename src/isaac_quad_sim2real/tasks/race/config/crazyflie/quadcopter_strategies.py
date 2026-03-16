@@ -110,7 +110,7 @@ class DefaultQuadcopterStrategy:
         # Final gate passage condition: must cross the plane and be within the gate boundaries
         gate_passed = crossed_plane & in_gate_y & in_gate_z
 
-        # Before we update the prev_x for the next step, we need to handle the case where a drone has just passed through the gate.
+        # Update previous local positions for the next step's crossing detection
         self.env._prev_x_drone_wrt_gate = curr_local_x.clone()
         self.env._prev_y_drone_wrt_gate = curr_local_y.clone()
         self.env._prev_z_drone_wrt_gate = curr_local_z.clone()
@@ -209,22 +209,35 @@ class DefaultQuadcopterStrategy:
         current_gate_quat_w = self.env._waypoints_quat[current_gate_idx, :] # 获取门的朝向
         
         # 计算当前门相对于无人机机身的【位置】和【朝向】
-        gate_pos_b, gate_quat_b = subtract_frame_transforms(
-            current_gate_pos_w,
-            current_gate_quat_w,
-            self.env._robot.data.root_link_pos_w,
-            self.env._robot.data.root_quat_w
-        )
+        # gate_pos_b, gate_quat_b = subtract_frame_transforms(
+        #     current_gate_pos_w,
+        #     current_gate_quat_w,
+        #     self.env._robot.data.root_link_pos_w,
+        #     self.env._robot.data.root_quat_w
+        # )
         
+        gate_pos_b, gate_quat_b = subtract_frame_transforms(
+            self.env._robot.data.root_link_pos_w,  # 🌟 A: Drone
+            self.env._robot.data.root_quat_w,
+            current_gate_pos_w,                    # 🌟 B: Gate
+            current_gate_quat_w
+        )
+
         # 🌟 新增：Where is the NEXT gate? (Lookahead，帮助规划赛车线)
         next_gate_idx = (current_gate_idx + 1) % self.env._waypoints.shape[0]
         next_gate_pos_w = self.env._waypoints[next_gate_idx, :3]
         
+        # next_gate_pos_b, _ = subtract_frame_transforms(
+        #     next_gate_pos_w,
+        #     torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).repeat(self.num_envs, 1), # 假设暂不需要下一个门的朝向，随便传个默认四元数
+        #     self.env._robot.data.root_link_pos_w,
+        #     self.env._robot.data.root_quat_w
+        # )
         next_gate_pos_b, _ = subtract_frame_transforms(
-            next_gate_pos_w,
-            torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).repeat(self.num_envs, 1), # 假设暂不需要下一个门的朝向，随便传个默认四元数
-            self.env._robot.data.root_link_pos_w,
-            self.env._robot.data.root_quat_w
+            self.env._robot.data.root_link_pos_w,  # 🌟 A: Drone
+            self.env._robot.data.root_quat_w,
+            next_gate_pos_w,                       # 🌟 B: Next Gate
+            torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).repeat(self.num_envs, 1)
         )
 
         # 3. What was I just doing?
