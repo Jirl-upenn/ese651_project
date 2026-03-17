@@ -177,12 +177,12 @@ class DefaultQuadcopterStrategy:
         # 3. An adaptive spin penalty that penalizes pitch (Y-axis) less only when the drone is flying towards Gate 3, to allow for power loops on that specific gate (but still penalizes excessive spinning in all axes and at other gates)
         ang_vel_weights = torch.ones((self.num_envs, 3), device=self.device)
         # heading_to_gate_3 = (self.env._idx_wp == 2)
-        ang_vel_weights[heading_to_gate_3] = torch.tensor([0.5, 0.05, 1.0], device=self.device) 
+        ang_vel_weights[heading_to_gate_3] = torch.tensor([1.0, 0.05, 1.0], device=self.device) 
         spin_penalty = torch.sum(ang_vel_weights * torch.square(ang_vel), dim=1) * 0.01
 
         spin_penalty = torch.clamp(spin_penalty, max=2.0) #
         # Time penalty
-        time_penalty = torch.ones_like(progress) * 0.005 # 0.005
+        time_penalty = torch.ones_like(progress) * 0.05 # 0.005
         # Bonus for passing through the gate
 
 
