@@ -189,7 +189,7 @@ class DefaultQuadcopterStrategy:
         # ------------------------------------------------------------------
 
         # Clamp the progress reward to prevent large spikes, and scale it down
-        progress = torch.clamp(progress_speed, min=-15.0, max=15.0) * 0.2
+        progress = torch.clamp(progress_speed, min=-10.0, max=10.0) * 0.2
 
         # Add a small penalty for changing actions too abruptly, to encourage smoother flying (but don't penalize it too much or it won't learn power loops!)
         action_diff = torch.sum(torch.square(self.env._actions - self.env._previous_actions), dim=1) * 0.005
@@ -211,7 +211,7 @@ class DefaultQuadcopterStrategy:
 
         spin_penalty = torch.clamp(spin_penalty, max=2.0) #
         # Time penalty
-        time_penalty = torch.ones_like(progress) * 0.15 # 0.005 -> 0.05 -> 0.15
+        time_penalty = torch.ones_like(progress) * 0.23 # 0.005 -> 0.05 -> 0.15 -> 0.35
         # Bonus for passing through the gate
 
 
