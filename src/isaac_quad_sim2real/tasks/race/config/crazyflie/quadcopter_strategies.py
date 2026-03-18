@@ -177,7 +177,7 @@ class DefaultQuadcopterStrategy:
         # Calculate how high the drone is relative to the gate
         relative_height = drone_pos[:, 2] - self.env._desired_pos_w[:, 2]
         # Only True if the drone is heading to Gate 3 AND is less than 2.0 meters above it
-        is_climbing_phase = heading_to_gate_3 & (relative_height < 0.7)
+        is_climbing_phase = heading_to_gate_3 & (relative_height < 1)
 
         # Reward positive Z velocity, but clamp negatives to 0 so we don't punish diving
         z_vel_reward = torch.clamp(drone_vel[:, 2], min=0.0, max=3.0)
@@ -189,12 +189,12 @@ class DefaultQuadcopterStrategy:
         # ------------------------------------------------------------------
 
         # Clamp the progress reward to prevent large spikes, and scale it down
-        progress = torch.clamp(progress_speed, min=-10.0, max=10.0) * 0.2
+        progress = torch.clamp(progress_speed, min=-15.0, max=15.0) * 0.2
 
         # Add a small penalty for changing actions too abruptly, to encourage smoother flying (but don't penalize it too much or it won't learn power loops!)
         action_diff = torch.sum(torch.square(self.env._actions - self.env._previous_actions), dim=1) * 0.005
         # Spin Penalty
-        ang_vel = self.env._robot.data.root_ang_vel_w
+        ang_vel = self.env._robot.data.root_ang_vel_b
 
         # 1. A simple spin penalty that penalizes all angular velocities equally (not ideal for racing, as it would discourage power loops)
         # spin_penalty = torch.sum(torch.square(ang_vel), dim=1) * 0.01
@@ -211,7 +211,7 @@ class DefaultQuadcopterStrategy:
 
         spin_penalty = torch.clamp(spin_penalty, max=2.0) #
         # Time penalty
-        time_penalty = torch.ones_like(progress) * 0.05 # 0.005
+        time_penalty = torch.ones_like(progress) * 0.15 # 0.005 -> 0.05 -> 0.15
         # Bonus for passing through the gate
 
 
