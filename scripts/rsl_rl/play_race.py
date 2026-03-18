@@ -7,6 +7,7 @@
 
 """Launch Isaac Sim Simulator first."""
 
+from datetime import datetime
 import sys
 import os
 local_rsl_path = os.path.abspath("src/third_parties/rsl_rl_local")
@@ -112,14 +113,17 @@ def main():
 
     # wrap for video recording
     if args_cli.video:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        unique_video_name = f"{args_cli.video_name}_{timestamp}"
+
         video_kwargs = {
             "video_folder": os.path.join(log_dir, "videos", "play"),
             "step_trigger": lambda step: step == 0,
             "video_length": args_cli.video_length,
             "disable_logger": True,
-            "name_prefix": args_cli.video_name,
+            "name_prefix": unique_video_name,
         }
-        print("[INFO] Recording videos during training.")
+        print(f"[INFO] Recording video to: {unique_video_name}")
         print_dict(video_kwargs, nesting=4)
         env = gym.wrappers.RecordVideo(env, **video_kwargs)
 
@@ -167,56 +171,73 @@ def main():
     prev_gate_idx = raw_env._idx_wp.clone()
     # ==========================================================
 
+    total_steps = 0
+    max_eval_steps = 3000
+
     # simulate environment
     while simulation_app.is_running():
         # run everything in inference mode
+        # run everything in inference mode
         with torch.inference_mode():
-            # agent stepping
             actions = policy(obs)
-            # env stepping
             obs, rewards, dones, infos = env.step(actions)
-            # Extract tensor from TensorDict for policy
-            if hasattr(obs, "get"):  # Check if it's a TensorDict
-                obs = obs["policy"]  # Extract the policy observation
+            if hasattr(obs, "get"):  
+                obs = obs["policy"] 
 
             # ==========================================================
-            # 🌟 NEW: Lap detection and timing core logic
+            # 🌟 LAP DETECTION & TIMING LOGIC 
             # ==========================================================
             curr_gate_idx = raw_env._idx_wp
             
-            # Check if a lap was just completed: 
-            # The previous frame was at the last gate, and the current frame is at gate 0
+            # 1. Check and add laps
             just_finished_lap = (prev_gate_idx == num_gates - 1) & (curr_gate_idx == 0)
             lap_counts[just_finished_lap] += 1
             
-            # If a drone crashed and reset (dones is True), reset its lap count to 0
-            lap_counts[dones.bool()] = 0 
-            
-            # Check if any drone just finished 3 laps
+            # 2. Check for race completion FIRST
             finished_3_laps = (lap_counts == 3)
             if finished_3_laps.any():
-                # Calculate physical time: survived steps * physical step interval (dt)
-                # Fallback for different naming conventions in IsaacLab (step_dt or dt), default to 0.02s
                 dt = getattr(raw_env, "step_dt", getattr(raw_env, "dt", 0.02)) 
                 time_taken = raw_env.episode_length_buf[finished_3_laps] * dt
                 
-                # Extract IDs of finished drones and print their lap times
                 finished_ids = finished_3_laps.nonzero(as_tuple=False).squeeze(-1)
                 for env_id, t in zip(finished_ids, time_taken):
-                    print(f"🏁 [LAP TIME] Amazing! Drone {env_id.item()} successfully completed 3 laps! Time: {t.item():.2f} seconds!")
+                    print(f"🏁 [LAP TIME] AMAZING! Drone {env_id.item()} finished 3 laps in {t.item():.2f} seconds!")
                 
-                # To prevent spam printing in the next frame, reset lap counts of winners to 0
                 lap_counts[finished_3_laps] = 0
-                
-            # Update prev_gate_idx for the next frame's comparison
-            prev_gate_idx = curr_gate_idx.clone()
-            # ==========================================================
 
-        if args_cli.video:
-            timestep += 1
-            # Exit the play loop after recording one video
-            if timestep == args_cli.video_length:
-                break
+                # OPTIONAL: If you want the script to automatically close after 
+                # ANY drone finishes the race, uncomment the next line:
+                # break 
+
+            # 3. Handle crashes / resets
+            lap_counts[dones.bool()] = 0 
+            
+            # 4. Update for next frame
+            prev_gate_idx = curr_gate_idx.clone()
+
+            # ==========================================================
+            # 🌟 VIDEO RECORDING LOGIC (Fixed)
+            # ==========================================================
+            if args_cli.video:
+                timestep += 1
+                # We NO LONGER break the loop here! 
+                # The video wrapper will naturally stop recording new frames 
+                # once it hits 'video_length', but the simulation will stay open 
+                # so the drone can finish the race and print its time.
+            # ==========================================================
+            # 🌟 NEW: The Heartbeat & Timeout Logic
+            # ==========================================================
+            total_steps += 1
+            
+            # 1. The Heartbeat: Print status every 100 steps (~2 seconds of sim time)
+            if total_steps % 100 == 0:
+                best_drone_laps = lap_counts.max().item()
+                print(f"⏳ [STATUS] Simulating step {total_steps}/{max_eval_steps}... Best drone is currently on lap {best_drone_laps}/3")
+
+            # 2. The Timeout: Prevent infinite running if they keep crashing
+            if total_steps >= max_eval_steps:
+                print(f"⚠️ [TIMEOUT] Reached {max_eval_steps} steps. No drone managed to finish 3 laps. Exiting.")
+                break  # This breaks the while loop and closes the sim
 
     # close the simulator
     env.close()
@@ -237,7 +258,7 @@ python scripts/rsl_rl/play_race.py \
     --video \
     --video_length 1000 \
     --headless \
-    --video_name "fastest_lap_attempt_1"
+    --video_name "best_model"
 
 python scripts/rsl_rl/play_race.py \
     --task Isaac-Quadcopter-Race-v0 \
