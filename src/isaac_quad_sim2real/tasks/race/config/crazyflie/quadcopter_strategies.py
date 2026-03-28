@@ -98,18 +98,14 @@ class DefaultQuadcopterStrategy:
         # To prevent false positives from drones that are very far away and just happen to cross the plane, we add a distance check.
         valid_distance = torch.abs(self.env._prev_x_drone_wrt_gate) < 1.5
 
-        alpha = self.env._prev_x_drone_wrt_gate / (self.env._prev_x_drone_wrt_gate - curr_local_x + 1e-8)
-        alpha = torch.clamp(alpha, 0.0, 1.0)
-
-        cross_y = self.env._prev_y_drone_wrt_gate + alpha * (curr_local_y - self.env._prev_y_drone_wrt_gate)
-        cross_z = self.env._prev_z_drone_wrt_gate + alpha * (curr_local_z - self.env._prev_z_drone_wrt_gate)
-
-        # Logic for checking if the drone is within the gate boundaries
-        in_gate_y = torch.abs(cross_y) < 0.45
-        in_gate_z = torch.abs(cross_z) < 0.45
+        in_gate = (
+            torch.abs(curr_local_y) < 0.45
+        ) & (
+            torch.abs(curr_local_z) < 0.45
+        )
 
         # Final gate passage condition: must cross the plane and be within the gate boundaries
-        gate_passed = crossed_forward & valid_distance & in_gate_y & in_gate_z
+        gate_passed = crossed_forward & valid_distance & in_gate
         # Detect if it passed through the gate in the wrong direction (for potential penalty)
         gate_passed_wrong_way = crossed_backward & valid_distance & in_gate_y & in_gate_z
         # Store the gate passage info in the environment for use in rewards and logging
@@ -117,8 +113,6 @@ class DefaultQuadcopterStrategy:
 
         # Update previous local positions for the next step's crossing detection
         self.env._prev_x_drone_wrt_gate = curr_local_x.clone()
-        self.env._prev_y_drone_wrt_gate = curr_local_y.clone()
-        self.env._prev_z_drone_wrt_gate = curr_local_z.clone()
 
         # Handle gate passage: For drones that passed through the gate, we need to:
         ids_gate_passed = torch.where(gate_passed)[0]
@@ -511,8 +505,6 @@ class DefaultQuadcopterStrategy:
 
         # self.env._prev_x_drone_wrt_gate[env_ids] = 1.0
         self.env._prev_x_drone_wrt_gate[env_ids] = self.env._pose_drone_wrt_gate[env_ids][:, 0].clone()
-        self.env._prev_y_drone_wrt_gate[env_ids] = self.env._pose_drone_wrt_gate[env_ids][:, 1].clone()
-        self.env._prev_z_drone_wrt_gate[env_ids] = self.env._pose_drone_wrt_gate[env_ids][:, 2].clone()
         self.env._crashed[env_ids] = 0
         self.env._gate_passed_wrong_way[env_ids] = False
 '''
