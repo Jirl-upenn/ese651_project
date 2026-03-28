@@ -342,6 +342,32 @@ class QuadcopterEnv(DirectRLEnv):
         self._kd_omega_y_value = self.cfg.kd_omega_y
         self._tau_m_value = self.cfg.tau_m
 
+        # ==========================================================
+        # 🚨 TA's Domain Randomization Bounds 
+        # ==========================================================
+        # TWR
+        self._twr_min = self.cfg.thrust_to_weight * 0.95
+        self._twr_max = self.cfg.thrust_to_weight * 1.05
+        # Aerodynamics
+        self._k_aero_xy_min = self.cfg.k_aero_xy * 0.5
+        self._k_aero_xy_max = self.cfg.k_aero_xy * 2.0
+        self._k_aero_z_min = self.cfg.k_aero_z * 0.5
+        self._k_aero_z_max = self.cfg.k_aero_z * 2.0
+        # PID gains
+        self._kp_omega_rp_min = self.cfg.kp_omega_rp * 0.85
+        self._kp_omega_rp_max = self.cfg.kp_omega_rp * 1.15
+        self._ki_omega_rp_min = self.cfg.ki_omega_rp * 0.85
+        self._ki_omega_rp_max = self.cfg.ki_omega_rp * 1.15
+        self._kd_omega_rp_min = self.cfg.kd_omega_rp * 0.7
+        self._kd_omega_rp_max = self.cfg.kd_omega_rp * 1.3
+        self._kp_omega_y_min = self.cfg.kp_omega_y * 0.85
+        self._kp_omega_y_max = self.cfg.kp_omega_y * 1.15
+        self._ki_omega_y_min = self.cfg.ki_omega_y * 0.85
+        self._ki_omega_y_max = self.cfg.ki_omega_y * 1.15
+        self._kd_omega_y_min = self.cfg.kd_omega_y * 0.7
+        self._kd_omega_y_max = self.cfg.kd_omega_y * 1.3
+        # ==========================================================
+        
         # Initialize the strategy for rewards, observations, and resets
         # Strategy __init__ may set fixed parameter values using the _value attributes above
         self.strategy = self.cfg.strategy_class(self)

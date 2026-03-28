@@ -211,7 +211,7 @@ class DefaultQuadcopterStrategy:
 
         spin_penalty = torch.clamp(spin_penalty, max=2.0) #
         # Time penalty
-        time_penalty = torch.ones_like(progress) * 0.23 # 0.005 -> 0.05 -> 0.15 -> 0.35
+        time_penalty = torch.ones_like(progress) * 0.23 # 0.005 -> 0.05 -> 0.15 -> 0.35 -> 0.23
         # Bonus for passing through the gate
 
 
@@ -416,13 +416,40 @@ class DefaultQuadcopterStrategy:
             initial_yaw + torch.empty(n_reset, device=self.device).uniform_(-0.3, 0.3) # Random Yaw
         )
         default_root_state[:, 3:7] = quat
+
+        # ==========================================================
+        # 🚨 DYNAMICS DOMAIN RANDOMIZATION
+        # ==========================================================
+        if self.cfg.is_train: 
+            # 1. Randomize TWR
+            self.env._thrust_to_weight[env_ids] = torch.empty(n_reset, device=self.device).uniform_(self.env._twr_min, self.env._twr_max)
+
+            # 2. Randomize Aerodynamics
+            self.env._K_aero[env_ids, :2] = torch.empty(n_reset, 2, device=self.device).uniform_(self.env._k_aero_xy_min, self.env._k_aero_xy_max)
+            self.env._K_aero[env_ids, 2] = torch.empty(n_reset, device=self.device).uniform_(self.env._k_aero_z_min, self.env._k_aero_z_max)
+
+            # 3. Randomize PID Gains (Roll/Pitch)
+            self.env._kp_omega[env_ids, :2] = torch.empty(n_reset, 2, device=self.device).uniform_(self.env._kp_omega_rp_min, self.env._kp_omega_rp_max)
+            self.env._ki_omega[env_ids, :2] = torch.empty(n_reset, 2, device=self.device).uniform_(self.env._ki_omega_rp_min, self.env._ki_omega_rp_max)
+            self.env._kd_omega[env_ids, :2] = torch.empty(n_reset, 2, device=self.device).uniform_(self.env._kd_omega_rp_min, self.env._kd_omega_rp_max)
+
+            # 4. Randomize PID Gains (Yaw)
+            self.env._kp_omega[env_ids, 2] = torch.empty(n_reset, device=self.device).uniform_(self.env._kp_omega_y_min, self.env._kp_omega_y_max)
+            self.env._ki_omega[env_ids, 2] = torch.empty(n_reset, device=self.device).uniform_(self.env._ki_omega_y_min, self.env._ki_omega_y_max)
+            self.env._kd_omega[env_ids, 2] = torch.empty(n_reset, device=self.device).uniform_(self.env._kd_omega_y_min, self.env._kd_omega_y_max)
+        # ==========================================================
+
         # TODO ----- END -----
 
         # Handle play mode initial position
         if not self.cfg.is_train:
             # x_local and y_local are randomly sampled
-            x_local = torch.empty(1, device=self.device).uniform_(-3.0, -0.5)
-            y_local = torch.empty(1, device=self.device).uniform_(-1.0, 1.0)
+            # x_local = torch.empty(1, device=self.device).uniform_(-3.0, -0.5)
+            # y_local = torch.empty(1, device=self.device).uniform_(-1.0, 1.0)
+            
+            # x_local and y_local are FIXED to the center
+            x_local = torch.tensor([-1.75], device=self.device)
+            y_local = torch.tensor([0.0], device=self.device)
 
             x0_wp = self.env._waypoints[self.env._initial_wp, 0]
             y0_wp = self.env._waypoints[self.env._initial_wp, 1]
