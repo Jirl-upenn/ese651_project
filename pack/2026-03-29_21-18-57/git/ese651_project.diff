@@ -1,0 +1,24 @@
+--- git status ---
+On branch in_gate_detect_envfree_test
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   scripts/rsl_rl/train_race.py
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/scripts/rsl_rl/train_race.py b/scripts/rsl_rl/train_race.py
+index 7cbe4aa..4248127 100644
+--- a/scripts/rsl_rl/train_race.py
++++ b/scripts/rsl_rl/train_race.py
+@@ -108,7 +108,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
+     # TODO ----- START ----- Define rewards scales
+     # reward scales
+     progress_goal_reward_scale = 20 # default: 50
+-    crash_reward = -8.0 # default: -1
++    crash_reward = -12.0 # default: -1 -> -8 -> -30 -> -14
+     death_cost = -250.0 # default: -10 -> -50 ->-300
+ 
+     rewards = {

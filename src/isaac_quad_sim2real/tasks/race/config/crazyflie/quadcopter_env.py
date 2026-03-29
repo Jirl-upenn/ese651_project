@@ -280,7 +280,7 @@ class QuadcopterEnv(DirectRLEnv):
 
         self._crashed = torch.zeros(self.num_envs, device=self.device, dtype=torch.int)
 
-        self._gate_passed_wrong_way = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
+        # self._gate_passed_wrong_way = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
 
         # Motor dynamics
         self.cfg.thrust_to_weight = 3.15
@@ -688,7 +688,7 @@ class QuadcopterEnv(DirectRLEnv):
         # will not be used during runtime for the official class race.
 
         # drone flying through gate in wrong direction
-        cond_wrong_way = self._gate_passed_wrong_way
+        cond_wrong_way = self.strategy._gate_passed_wrong_way
 
         #TODO ----- END ----- [OPTIONAL]
 
