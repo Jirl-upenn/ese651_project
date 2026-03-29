@@ -107,7 +107,7 @@ class DefaultQuadcopterStrategy:
         # Final gate passage condition: must cross the plane and be within the gate boundaries
         gate_passed = crossed_forward & valid_distance & in_gate
         # Detect if it passed through the gate in the wrong direction (for potential penalty)
-        gate_passed_wrong_way = crossed_backward & valid_distance & in_gate_y & in_gate_z
+        gate_passed_wrong_way = crossed_backward & valid_distance & in_gate
         # Store the gate passage info in the environment for use in rewards and logging
         self.env._gate_passed_wrong_way = gate_passed_wrong_way
 
@@ -136,8 +136,6 @@ class DefaultQuadcopterStrategy:
             )
             # Set the previous x position relative to the new gate
             self.env._prev_x_drone_wrt_gate[ids_gate_passed] = new_local_pos_b[:, 0].clone()
-            self.env._prev_y_drone_wrt_gate[ids_gate_passed] = new_local_pos_b[:, 1].clone()
-            self.env._prev_z_drone_wrt_gate[ids_gate_passed] = new_local_pos_b[:, 2].clone()
 
         # 2. PRO RACING PROGRESS
         drone_pos = self.env._robot.data.root_link_pos_w
