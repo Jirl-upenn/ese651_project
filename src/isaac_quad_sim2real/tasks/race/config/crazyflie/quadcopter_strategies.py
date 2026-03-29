@@ -35,7 +35,7 @@ class DefaultQuadcopterStrategy:
         self.cfg = env.cfg
         self._prev_y_drone_wrt_gate = torch.zeros(self.num_envs, device=self.device)
         self._prev_z_drone_wrt_gate = torch.zeros(self.num_envs, device=self.device)
-        
+
         # Initialize episode sums for logging if in training mode
         if self.cfg.is_train and hasattr(env, 'rew'):
             keys = [key.split("_reward_scale")[0] for key in env.rew.keys() if key != "death_cost"]
@@ -424,22 +424,44 @@ class DefaultQuadcopterStrategy:
         # 🚨 DYNAMICS DOMAIN RANDOMIZATION
         # ==========================================================
         if self.cfg.is_train: 
-            # 1. Randomize TWR
-            self.env._thrust_to_weight[env_ids] = torch.empty(n_reset, device=self.device).uniform_(self.env._twr_min, self.env._twr_max)
-
+            # 1. Randomize TWR (Thrust-to-weight ratio)
+            twr_min_factor, twr_max_factor = 0.95, 1.05
+            self.env._thrust_to_weight[env_ids] = (
+                self.env._twr_value * torch.empty(n_reset, device=self.device).uniform_(twr_min_factor, twr_max_factor)
+            )
             # 2. Randomize Aerodynamics
-            self.env._K_aero[env_ids, :2] = torch.empty(n_reset, 2, device=self.device).uniform_(self.env._k_aero_xy_min, self.env._k_aero_xy_max)
-            self.env._K_aero[env_ids, 2] = torch.empty(n_reset, device=self.device).uniform_(self.env._k_aero_z_min, self.env._k_aero_z_max)
-
+            k_aero_xy_min_factor, k_aero_xy_max_factor = 0.5, 2.0
+            k_aero_z_min_factor, k_aero_z_max_factor = 0.5, 2.0
+            self.env._K_aero[env_ids, :2] = (
+                self.env._k_aero_xy_value * torch.empty(n_reset, 2, device=self.device).uniform_(k_aero_xy_min_factor, k_aero_xy_max_factor)
+            )
+            self.env._K_aero[env_ids, 2] = (
+                self.env._k_aero_z_value * torch.empty(n_reset, device=self.device).uniform_(k_aero_z_min_factor, k_aero_z_max_factor)
+            )
             # 3. Randomize PID Gains (Roll/Pitch)
-            self.env._kp_omega[env_ids, :2] = torch.empty(n_reset, 2, device=self.device).uniform_(self.env._kp_omega_rp_min, self.env._kp_omega_rp_max)
-            self.env._ki_omega[env_ids, :2] = torch.empty(n_reset, 2, device=self.device).uniform_(self.env._ki_omega_rp_min, self.env._ki_omega_rp_max)
-            self.env._kd_omega[env_ids, :2] = torch.empty(n_reset, 2, device=self.device).uniform_(self.env._kd_omega_rp_min, self.env._kd_omega_rp_max)
-
+            rp_min_factor, rp_max_factor = 0.85, 1.15
+            kd_rp_min_factor, kd_rp_max_factor = 0.7, 1.3
+            self.env._kp_omega[env_ids, :2] = (
+                self.env._kp_omega_rp_value * torch.empty(n_reset, 2, device=self.device).uniform_(rp_min_factor, rp_max_factor)
+            )
+            self.env._ki_omega[env_ids, :2] = (
+                self.env._ki_omega_rp_value * torch.empty(n_reset, 2, device=self.device).uniform_(rp_min_factor, rp_max_factor)
+            )
+            self.env._kd_omega[env_ids, :2] = (
+                self.env._kd_omega_rp_value * torch.empty(n_reset, 2, device=self.device).uniform_(kd_rp_min_factor, kd_rp_max_factor)
+            )
             # 4. Randomize PID Gains (Yaw)
-            self.env._kp_omega[env_ids, 2] = torch.empty(n_reset, device=self.device).uniform_(self.env._kp_omega_y_min, self.env._kp_omega_y_max)
-            self.env._ki_omega[env_ids, 2] = torch.empty(n_reset, device=self.device).uniform_(self.env._ki_omega_y_min, self.env._ki_omega_y_max)
-            self.env._kd_omega[env_ids, 2] = torch.empty(n_reset, device=self.device).uniform_(self.env._kd_omega_y_min, self.env._kd_omega_y_max)
+            yaw_min_factor, yaw_max_factor = 0.85, 1.15
+            kd_y_min_factor, kd_y_max_factor = 0.7, 1.3
+            self.env._kp_omega[env_ids, 2] = (
+                self.env._kp_omega_y_value * torch.empty(n_reset, device=self.device).uniform_(yaw_min_factor, yaw_max_factor)
+            )
+            self.env._ki_omega[env_ids, 2] = (
+                self.env._ki_omega_y_value * torch.empty(n_reset, device=self.device).uniform_(yaw_min_factor, yaw_max_factor)
+            )
+            self.env._kd_omega[env_ids, 2] = (
+                self.env._kd_omega_y_value * torch.empty(n_reset, device=self.device).uniform_(kd_y_min_factor, kd_y_max_factor)
+            )
         # ==========================================================
 
         # TODO ----- END -----

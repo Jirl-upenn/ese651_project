@@ -116,9 +116,9 @@ def main():
 
     # 强行把所有无人机的参数锁定为你代码里已有的极值：
     # 比如测试 1：推力最小 + Z轴风阻最大 + Yaw轴控制最弱
-    base_env._thrust_to_weight[:] = base_env._twr_min
-    base_env._K_aero[:, 2] = base_env._k_aero_z_max
-    base_env._kp_omega[:, 2] = base_env._kp_omega_y_min
+    # base_env._thrust_to_weight[:] = base_env._twr_min
+    # base_env._K_aero[:, 2] = base_env._k_aero_z_max
+    # base_env._kp_omega[:, 2] = base_env._kp_omega_y_min
     
     # wrap for video recording
     if args_cli.video:
