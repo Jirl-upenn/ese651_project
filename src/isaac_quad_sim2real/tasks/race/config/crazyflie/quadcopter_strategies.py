@@ -182,10 +182,12 @@ class DefaultQuadcopterStrategy:
         # 2. Calculated custom progress for gate 3
         # gate3_custom_progress = (progress_xy * 1.5) + (progress_z * 1.0)
         progress_speed = torch.where(heading_to_gate_3, progress_xy, progress_speed)
+
         # 3. Relax the penalty for flying backward/inverted over the top
         is_negative_progress = progress_speed < 0
         mask_relax_penalty = heading_to_gate_3 & is_negative_progress
-        progress_speed[mask_relax_penalty] = progress_speed[mask_relax_penalty] * 0.1
+        progress_speed[mask_relax_penalty] = progress_speed[mask_relax_penalty] * 0.5
+
         # 4. Add a bonus for climbing up during the approach to gate 3 to encourage power loops 
         # Calculate how high the drone is relative to the gate
         relative_height = drone_pos[:, 2] - self.env._desired_pos_w[:, 2]
@@ -195,8 +197,8 @@ class DefaultQuadcopterStrategy:
         z_vel_reward = torch.clamp(drone_vel[:, 2], min=0.0, max=3.0)
 
         # Apply the reward ONLY during the climbing phase
-        # climb_bonus = torch.where(is_climbing_phase, z_vel_reward * 0.5, 0.0)
-        climb_bonus = torch.where(is_climbing_phase, z_vel_reward * 0.8, 0.0)
+        climb_bonus = torch.where(is_climbing_phase, z_vel_reward * 0.5, 0.0)
+        # climb_bonus = torch.where(is_climbing_phase, z_vel_reward * 0.8, 0.0)
         progress_speed += climb_bonus
         # ------------------------------------------------------------------
 
