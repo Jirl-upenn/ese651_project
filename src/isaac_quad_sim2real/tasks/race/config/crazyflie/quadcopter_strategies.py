@@ -116,11 +116,16 @@ class DefaultQuadcopterStrategy:
             (torch.abs(cross_y) < 0.45) & 
             (torch.abs(cross_z) < 0.45)
         )
+        #
+        in_gate_wrong_way= (
+            (torch.abs(cross_y) < 0.7) & 
+            (torch.abs(cross_z) < 0.7)
+        )
 
         # Final gate passage condition: must cross the plane and be within the gate boundaries
         gate_passed = crossed_forward & valid_distance & in_gate
         # Detect if it passed through the gate in the wrong direction (for potential penalty)
-        gate_passed_wrong_way = crossed_backward & valid_distance & in_gate
+        gate_passed_wrong_way = crossed_backward & valid_distance & in_gate_wrong_way
         # Store the gate passage info in the environment for use in rewards and logging
         self._gate_passed_wrong_way = gate_passed_wrong_way
 
@@ -185,14 +190,13 @@ class DefaultQuadcopterStrategy:
         # Calculate how high the drone is relative to the gate
         relative_height = drone_pos[:, 2] - self.env._desired_pos_w[:, 2]
         # Only True if the drone is heading to Gate 3 AND is less than 2.0 meters above it
-        is_climbing_phase = heading_to_gate_3 & (relative_height < 1)
-
+        is_climbing_phase = heading_to_gate_3 & (relative_height < 1) # cant excute power loop w 0.8
         # Reward positive Z velocity, but clamp negatives to 0 so we don't punish diving
         z_vel_reward = torch.clamp(drone_vel[:, 2], min=0.0, max=3.0)
 
         # Apply the reward ONLY during the climbing phase
-        climb_bonus = torch.where(is_climbing_phase, z_vel_reward * 0.5, 0.0)
-
+        # climb_bonus = torch.where(is_climbing_phase, z_vel_reward * 0.5, 0.0)
+        climb_bonus = torch.where(is_climbing_phase, z_vel_reward * 0.8, 0.0)
         progress_speed += climb_bonus
         # ------------------------------------------------------------------
 
