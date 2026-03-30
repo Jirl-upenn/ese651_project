@@ -97,6 +97,14 @@ class DefaultQuadcopterStrategy:
         prev_x = self.env._prev_x_drone_wrt_gate
         prev_y = self._prev_y_drone_wrt_gate
         prev_z = self._prev_z_drone_wrt_gate
+        
+        # Logic for detecting if the drone has just crossed the plane of the gate:
+        crossed_forward = (prev_x > 0.0) & (curr_local_x <= 0.0)
+        crossed_backward = (prev_x < 0.0) & (curr_local_x >= 0.0)
+
+        # To prevent false positives from drones that are very far away and just happen to cross the plane, we add a distance check.
+        valid_distance = torch.abs(self.env._prev_x_drone_wrt_gate) < 1.5
+
         #
         alpha = prev_x / (prev_x - curr_local_x + 1e-8)
         alpha = torch.clamp(alpha, 0.0, 1.0)
@@ -108,13 +116,6 @@ class DefaultQuadcopterStrategy:
             (torch.abs(cross_y) < 0.45) & 
             (torch.abs(cross_z) < 0.45)
         )
-        
-        # Logic for detecting if the drone has just crossed the plane of the gate:
-        crossed_forward = (prev_x > 0.0) & (curr_local_x <= 0.0)
-        crossed_backward = (prev_x < 0.0) & (curr_local_x >= 0.0)
-
-        # To prevent false positives from drones that are very far away and just happen to cross the plane, we add a distance check.
-        valid_distance = torch.abs(self.env._prev_x_drone_wrt_gate) < 1.5
 
         # Final gate passage condition: must cross the plane and be within the gate boundaries
         gate_passed = crossed_forward & valid_distance & in_gate
