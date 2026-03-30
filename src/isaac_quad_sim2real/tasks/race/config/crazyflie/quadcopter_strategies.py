@@ -186,7 +186,8 @@ class DefaultQuadcopterStrategy:
         # 3. Relax the penalty for flying backward/inverted over the top
         is_negative_progress = progress_speed < 0
         mask_relax_penalty = heading_to_gate_3 & is_negative_progress
-        progress_speed[mask_relax_penalty] = progress_speed[mask_relax_penalty] * 0.5
+        # progress_speed[mask_relax_penalty] = progress_speed[mask_relax_penalty] * 0.5
+        progress_speed[mask_relax_penalty] = progress_speed[mask_relax_penalty] * 0.1
 
         # 4. Add a bonus for climbing up during the approach to gate 3 to encourage power loops 
         # Calculate how high the drone is relative to the gate
