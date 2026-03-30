@@ -33,8 +33,10 @@ class DefaultQuadcopterStrategy:
         self.device = env.device
         self.num_envs = env.num_envs
         self.cfg = env.cfg
+        # Added local variables 
         self._prev_y_drone_wrt_gate = torch.zeros(self.num_envs, device=self.device)
         self._prev_z_drone_wrt_gate = torch.zeros(self.num_envs, device=self.device)
+        self._gate_passed_wrong_way = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
         # Initialize episode sums for logging if in training mode
         if self.cfg.is_train and hasattr(env, 'rew'):
@@ -119,7 +121,7 @@ class DefaultQuadcopterStrategy:
         # Detect if it passed through the gate in the wrong direction (for potential penalty)
         gate_passed_wrong_way = crossed_backward & valid_distance & in_gate
         # Store the gate passage info in the environment for use in rewards and logging
-        self.env._gate_passed_wrong_way = gate_passed_wrong_way
+        self._gate_passed_wrong_way = gate_passed_wrong_way
 
         # Update previous local positions for the next step's crossing detection
         self.env._prev_x_drone_wrt_gate = curr_local_x.clone()
@@ -540,7 +542,7 @@ class DefaultQuadcopterStrategy:
         self._prev_z_drone_wrt_gate[env_ids] = self.env._pose_drone_wrt_gate[env_ids][:, 2].clone()
 
         self.env._crashed[env_ids] = 0
-        self.env._gate_passed_wrong_way[env_ids] = False
+        self._gate_passed_wrong_way[env_ids] = False
 '''
 conda activate env_isaaclab
 export PYTHONPATH=$(pwd)
