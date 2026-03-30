@@ -3,7 +3,7 @@ set -e
 
 # =========================
 # 手动指定要打包的日志文件夹
-LOG_TO_PACKAGE="logs/rsl_rl/quadcopter_direct/2026-03-29_23-10-00"
+LOG_TO_PACKAGE="logs/rsl_rl/quadcopter_direct/2026-03-30_01-38-34"
 # =========================
 
 # 打包输出目录

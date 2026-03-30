@@ -150,6 +150,8 @@ class DefaultQuadcopterStrategy:
             )
             # Set the previous x position relative to the new gate
             self.env._prev_x_drone_wrt_gate[ids_gate_passed] = new_local_pos_b[:, 0].clone()
+            self._prev_y_drone_wrt_gate[ids_gate_passed] = new_local_pos_b[:, 1].clone()
+            self._prev_z_drone_wrt_gate[ids_gate_passed] = new_local_pos_b[:, 2].clone()
 
         # 2. PRO RACING PROGRESS
         drone_pos = self.env._robot.data.root_link_pos_w
