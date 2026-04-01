@@ -141,10 +141,17 @@ class DefaultQuadcopterStrategy:
         #
         cross_y = prev_y + alpha * (curr_local_y - prev_y)
         cross_z = prev_z + alpha * (curr_local_z - prev_z)
+
+        # Determine if the drone is currently heading towards gate 3 (for special reward shaping on that gate)
+        heading_to_gate_1 = (self.env._idx_wp == 1)
+        heading_to_gate_2 = (self.env._idx_wp == 2)
+        
         #  
+        gate_threshold = torch.where(heading_to_gate_1 | heading_to_gate_2, 0.45, 0.55)
+        # Apply the dynamic threshold instead of hardcoded 0.5
         in_gate = (
-            (torch.abs(cross_y) < 0.45) & 
-            (torch.abs(cross_z) < 0.45)
+            (torch.abs(cross_y) < gate_threshold) & 
+            (torch.abs(cross_z) < gate_threshold)
         )
         #
         in_gate_wrong_way= (
@@ -256,7 +263,7 @@ class DefaultQuadcopterStrategy:
 
         spin_penalty = torch.clamp(spin_penalty, max=2.0) #
         # Time penalty
-        time_penalty = torch.ones_like(progress) * 0.23 # 0.005 -> 0.05 -> 0.15 -> 0.35 -> 0.23
+        time_penalty = torch.ones_like(progress) * 0.1 # 0.005 -> 0.05 -> 0.15 -> 0.35 -> 0.23 -> 0.1
         # Bonus for passing through the gate
 
 
