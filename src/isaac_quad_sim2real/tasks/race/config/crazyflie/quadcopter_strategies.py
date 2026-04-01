@@ -133,7 +133,7 @@ class DefaultQuadcopterStrategy:
         crossed_backward = (prev_x < 0.0) & (curr_local_x >= 0.0)
 
         # To prevent false positives from drones that are very far away and just happen to cross the plane, we add a distance check.
-        valid_distance = torch.abs(self.env._prev_x_drone_wrt_gate) < 1.5
+        valid_distance = torch.abs(self.env._prev_x_drone_wrt_gate) < 2.5
 
         #
         alpha = prev_x / (prev_x - curr_local_x + 1e-8)
@@ -142,16 +142,16 @@ class DefaultQuadcopterStrategy:
         cross_y = prev_y + alpha * (curr_local_y - prev_y)
         cross_z = prev_z + alpha * (curr_local_z - prev_z)
 
-        # Determine if the drone is currently heading towards gate 3 (for special reward shaping on that gate)
-        heading_to_gate_1 = (self.env._idx_wp == 1)
-        heading_to_gate_2 = (self.env._idx_wp == 2)
+        # # Determine if the drone is currently heading towards gate 3 (for special reward shaping on that gate)
+        # heading_to_gate_1 = (self.env._idx_wp == 1)
+        # heading_to_gate_2 = (self.env._idx_wp == 2)
         
-        #  
-        gate_threshold = torch.where(heading_to_gate_1 | heading_to_gate_2, 0.45, 0.55)
-        # Apply the dynamic threshold instead of hardcoded 0.5
+        # #  
+        # gate_threshold = torch.where(heading_to_gate_1 | heading_to_gate_2, 0.45, 0.55)
+        # # Apply the dynamic threshold instead of hardcoded 0.5
         in_gate = (
-            (torch.abs(cross_y) < gate_threshold) & 
-            (torch.abs(cross_z) < gate_threshold)
+            (torch.abs(cross_y) < 0.7) & 
+            (torch.abs(cross_z) < 0.7)
         )
         #
         in_gate_wrong_way= (
@@ -241,7 +241,7 @@ class DefaultQuadcopterStrategy:
         # ------------------------------------------------------------------
 
         # Clamp the progress reward to prevent large spikes, and scale it down
-        progress = torch.clamp(progress_speed, min=-10.0, max=10.0) * 0.2
+        progress = torch.clamp(progress_speed, min=-10.0, max=20.0) * 0.2
 
         # Add a small penalty for changing actions too abruptly, to encourage smoother flying (but don't penalize it too much or it won't learn power loops!)
         action_diff = torch.sum(torch.square(self.env._actions - self.env._previous_actions), dim=1) * 0.005
@@ -259,7 +259,7 @@ class DefaultQuadcopterStrategy:
         ang_vel_weights = torch.ones((self.num_envs, 3), device=self.device)
         # heading_to_gate_3 = (self.env._idx_wp == 2)
         ang_vel_weights[heading_to_gate_3] = torch.tensor([1.0, 0.05, 1.0], device=self.device) 
-        spin_penalty = torch.sum(ang_vel_weights * torch.square(ang_vel), dim=1) * 0.01
+        spin_penalty = torch.sum(ang_vel_weights * torch.square(ang_vel), dim=1) * 0.005 #0.01 -> 0.005
 
         spin_penalty = torch.clamp(spin_penalty, max=2.0) #
         # Time penalty
