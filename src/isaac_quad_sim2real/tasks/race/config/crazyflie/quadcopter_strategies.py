@@ -70,35 +70,60 @@ class DefaultQuadcopterStrategy:
         self.env._thrust_to_weight[:] = self.env._twr_value
 
         # ==========================================================
-        # 🚨 DOMAIN RANDOMIZATION BOUNDS (初始化时计算并锁死边界)
+        # 🚨 DOMAIN RANDOMIZATION BOUNDS
+        # ==========================================================
+        # # 1. TWR
+        # self._twr_min = self.env._twr_value * 0.9
+        # self._twr_max = self.env._twr_value * 1.1
+        
+        # # 2. Aerodynamics
+        # self._k_aero_xy_min = self.env._k_aero_xy_value * 0.45
+        # self._k_aero_xy_max = self.env._k_aero_xy_value * 2.2
+        # self._k_aero_z_min = self.env._k_aero_z_value * 0.45
+        # self._k_aero_z_max = self.env._k_aero_z_value * 2.2
+        
+        # # 3. PID gains (Roll/Pitch)
+        # self._kp_omega_rp_min = self.env._kp_omega_rp_value * 0.8
+        # self._kp_omega_rp_max = self.env._kp_omega_rp_value * 1.25
+        # self._ki_omega_rp_min = self.env._ki_omega_rp_value * 0.8
+        # self._ki_omega_rp_max = self.env._ki_omega_rp_value * 1.25
+        # self._kd_omega_rp_min = self.env._kd_omega_rp_value * 0.65
+        # self._kd_omega_rp_max = self.env._kd_omega_rp_value * 1.4
+        
+        # # 4. PID gains (Yaw)
+        # self._kp_omega_y_min = self.env._kp_omega_y_value * 0.8
+        # self._kp_omega_y_max = self.env._kp_omega_y_value * 1.25
+        # self._ki_omega_y_min = self.env._ki_omega_y_value * 0.8
+        # self._ki_omega_y_max = self.env._ki_omega_y_value * 1.25
+        # self._kd_omega_y_min = self.env._kd_omega_y_value * 0.65
+        # self._kd_omega_y_max = self.env._kd_omega_y_value * 1.4
         # ==========================================================
         # 1. TWR
-        self._twr_min = self.env._twr_value * 0.9
-        self._twr_max = self.env._twr_value * 1.1
+        self._twr_min = self.env._twr_value * 0.95
+        self._twr_max = self.env._twr_value * 1.05
         
         # 2. Aerodynamics
-        self._k_aero_xy_min = self.env._k_aero_xy_value * 0.45
-        self._k_aero_xy_max = self.env._k_aero_xy_value * 2.2
-        self._k_aero_z_min = self.env._k_aero_z_value * 0.45
-        self._k_aero_z_max = self.env._k_aero_z_value * 2.2
+        self._k_aero_xy_min = self.env._k_aero_xy_value * 0.5
+        self._k_aero_xy_max = self.env._k_aero_xy_value * 2.0
+        self._k_aero_z_min = self.env._k_aero_z_value * 0.5
+        self._k_aero_z_max = self.env._k_aero_z_value * 2.0
         
         # 3. PID gains (Roll/Pitch)
-        self._kp_omega_rp_min = self.env._kp_omega_rp_value * 0.8
-        self._kp_omega_rp_max = self.env._kp_omega_rp_value * 1.25
-        self._ki_omega_rp_min = self.env._ki_omega_rp_value * 0.8
-        self._ki_omega_rp_max = self.env._ki_omega_rp_value * 1.25
-        self._kd_omega_rp_min = self.env._kd_omega_rp_value * 0.65
-        self._kd_omega_rp_max = self.env._kd_omega_rp_value * 1.4
+        self._kp_omega_rp_min = self.env._kp_omega_rp_value * 0.85
+        self._kp_omega_rp_max = self.env._kp_omega_rp_value * 1.15
+        self._ki_omega_rp_min = self.env._ki_omega_rp_value * 0.85
+        self._ki_omega_rp_max = self.env._ki_omega_rp_value * 1.15
+        self._kd_omega_rp_min = self.env._kd_omega_rp_value * 0.7
+        self._kd_omega_rp_max = self.env._kd_omega_rp_value * 1.3
         
         # 4. PID gains (Yaw)
-        self._kp_omega_y_min = self.env._kp_omega_y_value * 0.8
-        self._kp_omega_y_max = self.env._kp_omega_y_value * 1.25
-        self._ki_omega_y_min = self.env._ki_omega_y_value * 0.8
-        self._ki_omega_y_max = self.env._ki_omega_y_value * 1.25
-        self._kd_omega_y_min = self.env._kd_omega_y_value * 0.65
-        self._kd_omega_y_max = self.env._kd_omega_y_value * 1.4
+        self._kp_omega_y_min = self.env._kp_omega_y_value * 0.85
+        self._kp_omega_y_max = self.env._kp_omega_y_value * 1.15
+        self._ki_omega_y_min = self.env._ki_omega_y_value * 0.85
+        self._ki_omega_y_max = self.env._ki_omega_y_value * 1.15
+        self._kd_omega_y_min = self.env._kd_omega_y_value * 0.4
+        self._kd_omega_y_max = self.env._kd_omega_y_value * 1.3
         # ==========================================================
-
     def get_rewards(self) -> torch.Tensor:
         """get_rewards() is called per timestep. This is where you define your reward structure and compute them
         according to the reward scales you tune in train_race.py. The following is an example reward structure that
@@ -112,7 +137,7 @@ class DefaultQuadcopterStrategy:
 
         gate_pos = self.env._waypoints[curr_gate_idx, :3]
         gate_quat = self.env._waypoints_quat[curr_gate_idx, :]
-        # Calculate the gate's position relative to the drone's body frame (B) for accurate crossing detection
+        # Calculate drone position in the gate's local frame (with gate as origin and orientation)
         local_pos_b, _ = subtract_frame_transforms(
             gate_pos, 
             gate_quat, 
@@ -194,6 +219,11 @@ class DefaultQuadcopterStrategy:
             self.env._prev_x_drone_wrt_gate[ids_gate_passed] = new_local_pos_b[:, 0].clone()
             self._prev_y_drone_wrt_gate[ids_gate_passed] = new_local_pos_b[:, 1].clone()
             self._prev_z_drone_wrt_gate[ids_gate_passed] = new_local_pos_b[:, 2].clone()
+            # Update current local positions
+            curr_local_x[ids_gate_passed] = new_local_pos_b[:, 0].clone()
+            curr_local_y[ids_gate_passed] = new_local_pos_b[:, 1].clone()
+            curr_local_z[ids_gate_passed] = new_local_pos_b[:, 2].clone()
+            
 
         # 2. PRO RACING PROGRESS
         drone_pos = self.env._robot.data.root_link_pos_w
@@ -229,8 +259,10 @@ class DefaultQuadcopterStrategy:
         # 4. Add a bonus for climbing up during the approach to gate 3 to encourage power loops 
         # Calculate how high the drone is relative to the gate
         relative_height = drone_pos[:, 2] - self.env._desired_pos_w[:, 2]
+        # 
+        is_in_front_of_gate = (curr_local_x < 0.0)
         # Only True if the drone is heading to Gate 3 AND is less than 2.0 meters above it
-        is_climbing_phase = heading_to_gate_3 & (relative_height < 1) # cant excute power loop w 0.8
+        is_climbing_phase = heading_to_gate_3 & (relative_height < 1) & is_in_front_of_gate# cant excute power loop w 0.8
         # Reward positive Z velocity, but clamp negatives to 0 so we don't punish diving
         z_vel_reward = torch.clamp(drone_vel[:, 2], min=0.0, max=3.0)
 
@@ -243,8 +275,11 @@ class DefaultQuadcopterStrategy:
         # Clamp the progress reward to prevent large spikes, and scale it down
         progress = torch.clamp(progress_speed, min=-10.0, max=20.0) * 0.2
 
+        abs_speed = torch.linalg.norm(drone_vel, dim=1)
+        speed_bonus = abs_speed * 0.05
+
         # Add a small penalty for changing actions too abruptly, to encourage smoother flying (but don't penalize it too much or it won't learn power loops!)
-        action_diff = torch.sum(torch.square(self.env._actions - self.env._previous_actions), dim=1) * 0.005
+        # action_diff = torch.sum(torch.square(self.env._actions - self.env._previous_actions), dim=1) * 0.005
         # Spin Penalty
         ang_vel = self.env._robot.data.root_ang_vel_b
 
@@ -259,7 +294,7 @@ class DefaultQuadcopterStrategy:
         ang_vel_weights = torch.ones((self.num_envs, 3), device=self.device)
         # heading_to_gate_3 = (self.env._idx_wp == 2)
         ang_vel_weights[heading_to_gate_3] = torch.tensor([1.0, 0.05, 1.0], device=self.device) 
-        spin_penalty = torch.sum(ang_vel_weights * torch.square(ang_vel), dim=1) * 0.005 #0.01 -> 0.005
+        spin_penalty = torch.sum(ang_vel_weights * torch.square(ang_vel), dim=1) * 0.005 #0.01 -> 0.005 -> 0.002
 
         spin_penalty = torch.clamp(spin_penalty, max=2.0) #
         # Time penalty
@@ -283,8 +318,9 @@ class DefaultQuadcopterStrategy:
             # TODO ----- START ----- Compute per-timestep rewards by multiplying with your reward scales (in train_race.py)
             rewards = {
                 "progress_goal": progress * self.env.rew['progress_goal_reward_scale'],
+                "speed_bonus": speed_bonus * self.env.rew['progress_goal_reward_scale'],
                 "gate_passed": (gate_passed.float() * 10.0) * self.env.rew['progress_goal_reward_scale'],
-                "penalty_action": -1 * action_diff * self.env.rew['progress_goal_reward_scale'],
+                # "penalty_action": -1 * action_diff * self.env.rew['progress_goal_reward_scale'],
                 "penalty_spin": -1 * spin_penalty * self.env.rew['progress_goal_reward_scale'],
                 "penalty_time": -1 * time_penalty * self.env.rew['progress_goal_reward_scale'],
                 "crash": crashed * self.env.rew['crash_reward_scale'],
@@ -446,8 +482,8 @@ class DefaultQuadcopterStrategy:
         # 2. Add Domain Randomization (Spawn them slightly offset and messy)
         x_local = torch.empty(n_reset, device=self.device).uniform_(-4.0, -0.5) # Spawn 0.5m to 6.0m behind gate (Widen the spawn distance so it learns to fly from far away!)
         y_local = torch.empty(n_reset, device=self.device).uniform_(-1.0, 1.0)  # Shifted left/right
-        z_local = torch.empty(n_reset, device=self.device).uniform_(-0.5, 0.5)  # Shifted up/down
-
+        # z_local = torch.empty(n_reset, device=self.device).uniform_(-0.5, 0.5)  # Shifted up/down
+        z_local = torch.empty(n_reset, device=self.device).uniform_(-0.7, 0.7)  # Shifted up/down
         # Rotate local pos to global frame
         cos_theta = torch.cos(theta)
         sin_theta = torch.sin(theta)
@@ -456,7 +492,67 @@ class DefaultQuadcopterStrategy:
         
         initial_x = x0_wp - x_rot
         initial_y = y0_wp - y_rot
-        initial_z = z_local + z_wp
+
+        # ==========================================================
+        # Mix it up with some ground starts 
+        # ==========================================================
+        # Find out which resets are spawning at the initial gate 
+        is_initial_gate = (waypoint_indices == self.env._initial_wp)
+        # Set 30% of those initial gate spawns to be on the ground 
+        is_ground_start = is_initial_gate & (torch.rand(n_reset, device=self.device) < 0.3)
+        z_air = z_local + z_wp
+        z_ground = 0.05  # 
+        # If it's a ground start, set z to 0.05m, otherwise use the randomized air spawn height
+        initial_z = torch.where(is_ground_start, z_ground, z_air)
+        # For ground starts, set the initial velocities and orientations to 0.
+        default_root_state[is_ground_start, 7:13] = 0.0
+        # ==========================================================
+
+        # # ==========================================================
+        # # 🌪️ Power Loop 特训：强制 wp3 的生成点回到 wp2 的前方
+        # # ==========================================================
+        # loop_target_idx = 3  # wp3 (目标门)
+        # loop_start_idx = 2   # wp2 (Power Loop 的起点门)
+        
+        # is_loop_target = (waypoint_indices == loop_target_idx)
+        # n_loop = int(torch.count_nonzero(is_loop_target).item())
+
+        # if n_loop > 0:
+        #     # 获取 wp2 的坐标和朝向
+        #     x0_wp2 = self.env._waypoints[loop_start_idx, 0]
+        #     y0_wp2 = self.env._waypoints[loop_start_idx, 1]
+        #     z_wp2  = self.env._waypoints[loop_start_idx, 2]
+        #     theta_wp2 = self.env._waypoints[loop_start_idx, -1]
+
+        #     # 1. 局部坐标：因为你的代码里负数是门后，所以这里用正数（0.3 到 2.0）让它生成在 wp2 的门前（已经穿过 wp2）
+        #     x_local_pl = torch.empty(n_loop, device=self.device).uniform_(0.3, 2.0) 
+        #     y_local_pl = torch.empty(n_loop, device=self.device).uniform_(-1.0, 0.7)
+        #     z_local_pl = torch.empty(n_loop, device=self.device).uniform_(-0.7, 0.7)
+
+        #     # 2. 
+        #     cos_theta_wp2 = torch.cos(theta_wp2)
+        #     sin_theta_wp2 = torch.sin(theta_wp2)
+        #     x_rot_pl = cos_theta_wp2 * x_local_pl - sin_theta_wp2 * y_local_pl
+        #     y_rot_pl = sin_theta_wp2 * x_local_pl + cos_theta_wp2 * y_local_pl
+        #     initial_x[is_loop_target] = x0_wp2 - x_rot_pl
+        #     initial_y[is_loop_target] = y0_wp2 - y_rot_pl
+        #     initial_z[is_loop_target] = z_wp2 + z_local_pl
+            
+        #     # 4. 修复机头朝向：让它顺着 wp2 的方向准备进入 Power Loop
+        #     # 我们需要覆盖这部分无人机的 initial_yaw
+        #     initial_yaw_pl = torch.atan2(y0_wp2 - initial_y[is_loop_target], x0_wp2 - initial_x[is_loop_target])
+        #     # 但因为它是从 wp2 往前飞，它的机头应该是背离 wp2 的，所以可能需要加上 pi (根据你的坐标系定)
+        #     # 或者更简单直接的方法：直接让机头朝向顺着 wp2 的 theta 加上一点随机扰动
+        #     yaw_pl = theta_wp2 + torch.empty(n_loop, device=self.device).uniform_(-0.3, 0.3)
+            
+        #     quat_pl = quat_from_euler_xyz(
+        #         torch.empty(n_loop, device=self.device).uniform_(-0.2, 0.2), # Roll
+        #         torch.empty(n_loop, device=self.device).uniform_(-0.2, 0.2), # Pitch
+        #         yaw_pl # 修正后的 Yaw
+        #     )
+        #     # 覆盖 quat
+        #     quat[is_loop_target] = quat_pl
+        # # ==========================================================
 
         default_root_state[:, 0] = initial_x
         default_root_state[:, 1] = initial_y
