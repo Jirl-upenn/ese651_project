@@ -69,6 +69,36 @@ class DefaultQuadcopterStrategy:
         # Thrust to weight ratio
         self.env._thrust_to_weight[:] = self.env._twr_value
 
+        # ==========================================================
+        # 🚨 DOMAIN RANDOMIZATION BOUNDS (初始化时计算并锁死边界)
+        # ==========================================================
+        # 1. TWR
+        self._twr_min = self.env._twr_value * 0.9
+        self._twr_max = self.env._twr_value * 1.1
+        
+        # 2. Aerodynamics
+        self._k_aero_xy_min = self.env._k_aero_xy_value * 0.45
+        self._k_aero_xy_max = self.env._k_aero_xy_value * 2.2
+        self._k_aero_z_min = self.env._k_aero_z_value * 0.45
+        self._k_aero_z_max = self.env._k_aero_z_value * 2.2
+        
+        # 3. PID gains (Roll/Pitch)
+        self._kp_omega_rp_min = self.env._kp_omega_rp_value * 0.8
+        self._kp_omega_rp_max = self.env._kp_omega_rp_value * 1.25
+        self._ki_omega_rp_min = self.env._ki_omega_rp_value * 0.8
+        self._ki_omega_rp_max = self.env._ki_omega_rp_value * 1.25
+        self._kd_omega_rp_min = self.env._kd_omega_rp_value * 0.65
+        self._kd_omega_rp_max = self.env._kd_omega_rp_value * 1.4
+        
+        # 4. PID gains (Yaw)
+        self._kp_omega_y_min = self.env._kp_omega_y_value * 0.8
+        self._kp_omega_y_max = self.env._kp_omega_y_value * 1.25
+        self._ki_omega_y_min = self.env._ki_omega_y_value * 0.8
+        self._ki_omega_y_max = self.env._ki_omega_y_value * 1.25
+        self._kd_omega_y_min = self.env._kd_omega_y_value * 0.65
+        self._kd_omega_y_max = self.env._kd_omega_y_value * 1.4
+        # ==========================================================
+
     def get_rewards(self) -> torch.Tensor:
         """get_rewards() is called per timestep. This is where you define your reward structure and compute them
         according to the reward scales you tune in train_race.py. The following is an example reward structure that
@@ -306,12 +336,13 @@ class DefaultQuadcopterStrategy:
         # 🌟 新增：Where is the NEXT gate? (Lookahead，帮助规划赛车线)
         next_gate_idx = (current_gate_idx + 1) % self.env._waypoints.shape[0]
         next_gate_pos_w = self.env._waypoints[next_gate_idx, :3]
+        # next_gate_quat_w = self.env._waypoints_quat[next_gate_idx, :] # 获取下一个门的朝向
         
-        # next_gate_pos_b, _ = subtract_frame_transforms(
-        #     next_gate_pos_w,
-        #     torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).repeat(self.num_envs, 1), # 假设暂不需要下一个门的朝向，随便传个默认四元数
-        #     self.env._robot.data.root_link_pos_w,
-        #     self.env._robot.data.root_quat_w
+        # next_gate_pos_b, next_gate_quat_b = subtract_frame_transforms(
+        #     self.env._robot.data.root_link_pos_w,  # 🌟 A: Drone
+        #     self.env._robot.data.root_quat_w,
+        #     next_gate_pos_w,                       # 🌟 B: Next Gate
+        #     next_gate_quat_w
         # )
         next_gate_pos_b, _ = subtract_frame_transforms(
             self.env._robot.data.root_link_pos_w,  # 🌟 A: Drone
@@ -331,6 +362,7 @@ class DefaultQuadcopterStrategy:
                 gate_pos_b,         # (3) Where is the center of the current gate?
                 gate_quat_b,        # (4) 🌟 Which way is the current gate facing?
                 next_gate_pos_b,    # (3) 🌟 Where is the next gate? (Lookahead)
+                # next_gate_quat_b,   # (4) 🌟 Which way is the next gate facing?
                 prev_actions        # (4) What were my last motor commands?
             ],
             dim=-1,
@@ -436,44 +468,19 @@ class DefaultQuadcopterStrategy:
         # 🚨 DYNAMICS DOMAIN RANDOMIZATION
         # ==========================================================
         if self.cfg.is_train: 
-            # 1. Randomize TWR (Thrust-to-weight ratio)
-            twr_min_factor, twr_max_factor = 0.95, 1.05
-            self.env._thrust_to_weight[env_ids] = (
-                self.env._twr_value * torch.empty(n_reset, device=self.device).uniform_(twr_min_factor, twr_max_factor)
-            )
+            # 1. Randomize TWR
+            self.env._thrust_to_weight[env_ids] = torch.empty(n_reset, device=self.device).uniform_(self._twr_min, self._twr_max)
             # 2. Randomize Aerodynamics
-            k_aero_xy_min_factor, k_aero_xy_max_factor = 0.5, 2.0
-            k_aero_z_min_factor, k_aero_z_max_factor = 0.5, 2.0
-            self.env._K_aero[env_ids, :2] = (
-                self.env._k_aero_xy_value * torch.empty(n_reset, 2, device=self.device).uniform_(k_aero_xy_min_factor, k_aero_xy_max_factor)
-            )
-            self.env._K_aero[env_ids, 2] = (
-                self.env._k_aero_z_value * torch.empty(n_reset, device=self.device).uniform_(k_aero_z_min_factor, k_aero_z_max_factor)
-            )
+            self.env._K_aero[env_ids, :2] = torch.empty(n_reset, 2, device=self.device).uniform_(self._k_aero_xy_min, self._k_aero_xy_max)
+            self.env._K_aero[env_ids, 2] = torch.empty(n_reset, device=self.device).uniform_(self._k_aero_z_min, self._k_aero_z_max)
             # 3. Randomize PID Gains (Roll/Pitch)
-            rp_min_factor, rp_max_factor = 0.85, 1.15
-            kd_rp_min_factor, kd_rp_max_factor = 0.7, 1.3
-            self.env._kp_omega[env_ids, :2] = (
-                self.env._kp_omega_rp_value * torch.empty(n_reset, 2, device=self.device).uniform_(rp_min_factor, rp_max_factor)
-            )
-            self.env._ki_omega[env_ids, :2] = (
-                self.env._ki_omega_rp_value * torch.empty(n_reset, 2, device=self.device).uniform_(rp_min_factor, rp_max_factor)
-            )
-            self.env._kd_omega[env_ids, :2] = (
-                self.env._kd_omega_rp_value * torch.empty(n_reset, 2, device=self.device).uniform_(kd_rp_min_factor, kd_rp_max_factor)
-            )
+            self.env._kp_omega[env_ids, :2] = torch.empty(n_reset, 2, device=self.device).uniform_(self._kp_omega_rp_min, self._kp_omega_rp_max)
+            self.env._ki_omega[env_ids, :2] = torch.empty(n_reset, 2, device=self.device).uniform_(self._ki_omega_rp_min, self._ki_omega_rp_max)
+            self.env._kd_omega[env_ids, :2] = torch.empty(n_reset, 2, device=self.device).uniform_(self._kd_omega_rp_min, self._kd_omega_rp_max)
             # 4. Randomize PID Gains (Yaw)
-            yaw_min_factor, yaw_max_factor = 0.85, 1.15
-            kd_y_min_factor, kd_y_max_factor = 0.7, 1.3
-            self.env._kp_omega[env_ids, 2] = (
-                self.env._kp_omega_y_value * torch.empty(n_reset, device=self.device).uniform_(yaw_min_factor, yaw_max_factor)
-            )
-            self.env._ki_omega[env_ids, 2] = (
-                self.env._ki_omega_y_value * torch.empty(n_reset, device=self.device).uniform_(yaw_min_factor, yaw_max_factor)
-            )
-            self.env._kd_omega[env_ids, 2] = (
-                self.env._kd_omega_y_value * torch.empty(n_reset, device=self.device).uniform_(kd_y_min_factor, kd_y_max_factor)
-            )
+            self.env._kp_omega[env_ids, 2] = torch.empty(n_reset, device=self.device).uniform_(self._kp_omega_y_min, self._kp_omega_y_max)
+            self.env._ki_omega[env_ids, 2] = torch.empty(n_reset, device=self.device).uniform_(self._ki_omega_y_min, self._ki_omega_y_max)
+            self.env._kd_omega[env_ids, 2] = torch.empty(n_reset, device=self.device).uniform_(self._kd_omega_y_min, self._kd_omega_y_max)
         # ==========================================================
 
         # TODO ----- END -----
