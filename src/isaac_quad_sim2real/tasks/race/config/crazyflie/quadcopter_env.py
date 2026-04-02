@@ -681,7 +681,7 @@ class QuadcopterEnv(DirectRLEnv):
         cond_max_h = self._robot.data.root_link_pos_w[:, 2] > self.cfg.max_altitude
 
         # self._crashed is computed in get_rewards() in quadcopter_strategies.py.
-        cond_crashed = self._crashed > 50
+        cond_crashed = self._crashed > 80
 
         #TODO ----- START ----- [OPTIONAL]
         # Consider adding additional _get_dones() conditions to influence training. Note that the additional conditions

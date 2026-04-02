@@ -257,20 +257,20 @@ class DefaultQuadcopterStrategy:
         # ------------------------------------------------------------------
         heading_to_gate_3 = (self.env._idx_wp == 3)
         # 1. Calculate horizontal progress (X and Y axes)
-        # drone_to_gate_xy = drone_to_gate_w[:, :2]
-        # dist_to_gate_xy = torch.linalg.norm(drone_to_gate_xy, dim=1, keepdim=True) + 1e-8
-        # dir_to_gate_xy = drone_to_gate_xy / dist_to_gate_xy
-        # progress_xy = torch.sum(drone_vel[:, :2] * dir_to_gate_xy, dim=1)
+        drone_to_gate_xy = drone_to_gate_w[:, :2]
+        dist_to_gate_xy = torch.linalg.norm(drone_to_gate_xy, dim=1, keepdim=True) + 1e-8
+        dir_to_gate_xy = drone_to_gate_xy / dist_to_gate_xy
+        progress_xy = torch.sum(drone_vel[:, :2] * dir_to_gate_xy, dim=1)
 
         # 2. Calculated custom progress for gate 3
         # gate3_custom_progress = (progress_xy * 1.5) + (progress_z * 1.0)
-        # progress_speed = torch.where(heading_to_gate_3, progress_xy, progress_speed)
+        progress_speed = torch.where(heading_to_gate_3, progress_xy, progress_speed)
 
         # 3. Relax the penalty for flying backward/inverted over the top
-        is_negative_progress = progress_speed < 0
-        mask_relax_penalty = heading_to_gate_3 & is_negative_progress
-        # progress_speed[mask_relax_penalty] = progress_speed[mask_relax_penalty] * 0.5
-        progress_speed[mask_relax_penalty] = progress_speed[mask_relax_penalty] * 0.1
+        # is_negative_progress = progress_speed < 0
+        # mask_relax_penalty = heading_to_gate_3 & is_negative_progress
+        # # progress_speed[mask_relax_penalty] = progress_speed[mask_relax_penalty] * 0.5
+        # progress_speed[mask_relax_penalty] = progress_speed[mask_relax_penalty] * 0.1
 
         # 4. Add a bonus for climbing up during the approach to gate 3 to encourage power loops 
         # Calculate how high the drone is relative to the gate
@@ -291,8 +291,8 @@ class DefaultQuadcopterStrategy:
         # Clamp the progress reward to prevent large spikes, and scale it down
         progress = torch.clamp(progress_speed, min=-10.0, max=20.0) * 0.2
 
-        abs_speed = torch.linalg.norm(drone_vel, dim=1)
-        speed_bonus = abs_speed * 0.05
+        # abs_speed = torch.linalg.norm(drone_vel, dim=1)
+        # speed_bonus = abs_speed * 0.05
 
         # Add a small penalty for changing actions too abruptly, to encourage smoother flying (but don't penalize it too much or it won't learn power loops!)
         # action_diff = torch.sum(torch.square(self.env._actions - self.env._previous_actions), dim=1) * 0.005
@@ -314,7 +314,7 @@ class DefaultQuadcopterStrategy:
 
         spin_penalty = torch.clamp(spin_penalty, max=2.0) #
         # Time penalty
-        time_penalty = torch.ones_like(progress) * 0.1 # 0.005 -> 0.05 -> 0.15 -> 0.35 -> 0.23 -> 0.1
+        time_penalty = torch.ones_like(progress) * 0.25 # 0.005 -> 0.05 -> 0.15 -> 0.35 -> 0.23 -> 0.1
         # Bonus for passing through the gate
 
 
@@ -334,7 +334,7 @@ class DefaultQuadcopterStrategy:
             # TODO ----- START ----- Compute per-timestep rewards by multiplying with your reward scales (in train_race.py)
             rewards = {
                 "progress_goal": progress * self.env.rew['progress_goal_reward_scale'],
-                "speed_bonus": speed_bonus * self.env.rew['progress_goal_reward_scale'],
+                # "speed_bonus": speed_bonus * self.env.rew['progress_goal_reward_scale'],
                 "gate_passed": (gate_passed.float() * 10.0) * self.env.rew['progress_goal_reward_scale'],
                 # "penalty_action": -1 * action_diff * self.env.rew['progress_goal_reward_scale'],
                 "penalty_spin": -1 * spin_penalty * self.env.rew['progress_goal_reward_scale'],
