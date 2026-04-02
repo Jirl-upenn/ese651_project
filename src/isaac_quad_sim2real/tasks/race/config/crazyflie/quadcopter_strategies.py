@@ -244,7 +244,8 @@ class DefaultQuadcopterStrategy:
         dist_to_gate = torch.linalg.norm(drone_to_gate_w, dim=1, keepdim=True) + 1e-8
         dir_to_gate = drone_to_gate_w / dist_to_gate
         # 3. Blended direction: 70% along the optimal racing line (segment_dir) and 30% towards the gate (dir_to_gate)
-        blended_dir = (0.4 * segment_dir) + (0.6 * dir_to_gate)
+        # blended_dir = (0.1 * segment_dir) + (0.9 * dir_to_gate)
+        blended_dir= dir_to_gate
         blended_dir = blended_dir / torch.linalg.norm(blended_dir, dim=1, keepdim=True) 
 
         # 4. 最终速度投影
@@ -282,7 +283,7 @@ class DefaultQuadcopterStrategy:
         z_vel_reward = torch.clamp(drone_vel[:, 2], min=0.0, max=3.0)
 
         # Apply the reward ONLY during the climbing phase
-        climb_bonus = torch.where(is_climbing_phase, z_vel_reward * 0.5, 0.0)
+        climb_bonus = torch.where(is_climbing_phase, z_vel_reward * 0.8, 0.0)
         # climb_bonus = torch.where(is_climbing_phase, z_vel_reward * 0.8, 0.0)
         progress_speed += climb_bonus
         # ------------------------------------------------------------------
@@ -309,7 +310,7 @@ class DefaultQuadcopterStrategy:
         ang_vel_weights = torch.ones((self.num_envs, 3), device=self.device)
         # heading_to_gate_3 = (self.env._idx_wp == 2)
         ang_vel_weights[heading_to_gate_3] = torch.tensor([1.0, 0.05, 1.0], device=self.device) 
-        spin_penalty = torch.sum(ang_vel_weights * torch.square(ang_vel), dim=1) * 0.005 #0.01 -> 0.005 -> 0.002
+        spin_penalty = torch.sum(ang_vel_weights * torch.square(ang_vel), dim=1) * 0.002 #0.01 -> 0.005 -> 0.002
 
         spin_penalty = torch.clamp(spin_penalty, max=2.0) #
         # Time penalty
