@@ -243,11 +243,30 @@ class DefaultQuadcopterStrategy:
         drone_to_gate_w = self.env._desired_pos_w - drone_pos
         dist_to_gate = torch.linalg.norm(drone_to_gate_w, dim=1, keepdim=True) + 1e-8
         dir_to_gate = drone_to_gate_w / dist_to_gate
-        # 3. Blended direction: 70% along the optimal racing line (segment_dir) and 30% towards the gate (dir_to_gate)
-        # blended_dir = (0.1 * segment_dir) + (0.9 * dir_to_gate)
-        blended_dir= dir_to_gate
-        blended_dir = blended_dir / torch.linalg.norm(blended_dir, dim=1, keepdim=True) 
+        # ==================================================================
+        # 💡 修改点：引入动态前瞻 (Dynamic Lookahead)
+        # ==================================================================
+        # [注意] 这里假设你的环境里能拿到下一个门的位置。
+        next_gate_idx = (curr_gate_idx + 1) % self.env._waypoints.shape[0]
+        next_gate_pos_w = self.env._waypoints[next_gate_idx, :3]
 
+        drone_to_next_gate_w = next_gate_pos_w - drone_pos
+        dist_to_next_gate = torch.linalg.norm(drone_to_next_gate_w, dim=1, keepdim=True) + 1e-8
+        dir_to_next_gate = drone_to_next_gate_w / dist_to_next_gate
+
+        # 定义“前瞻半径”(Lookahead Radius)，比如 2.5 米
+        lookahead_radius = 2.5
+        
+        # 计算视线转移权重 (w_next): 
+        # - 当 dist_to_gate >= 2.5 时，w_next = 0 (100% 瞄准当前门)
+        # - 当 dist_to_gate 接近 0 时，w_next 接近 0.75 (75% 看下一个门，保留 25% 确保能穿过当前门，防止错过打卡)
+        w_next = torch.clamp((lookahead_radius - dist_to_gate) / lookahead_radius, min=0.0, max=1.0) * 0.75
+        w_curr = 1.0 - w_next
+
+        # 3. 动态混合方向 (Dynamic Blended Direction)
+        blended_dir = (w_curr * dir_to_gate) + (w_next * dir_to_next_gate)
+        # 归一化，确保它是一个单位方向向量
+        blended_dir = blended_dir / torch.linalg.norm(blended_dir, dim=1, keepdim=True) 
         # 4. 最终速度投影
         progress_speed = torch.sum(drone_vel * blended_dir, dim=1)
         # ==================================================================
@@ -292,7 +311,7 @@ class DefaultQuadcopterStrategy:
         progress = torch.clamp(progress_speed, min=-10.0, max=20.0) * 0.2
 
         abs_speed = torch.linalg.norm(drone_vel, dim=1)
-        speed_bonus = abs_speed * 0.05
+        speed_bonus = abs_speed * 0.075
 
         # Add a small penalty for changing actions too abruptly, to encourage smoother flying (but don't penalize it too much or it won't learn power loops!)
         # action_diff = torch.sum(torch.square(self.env._actions - self.env._previous_actions), dim=1) * 0.005
