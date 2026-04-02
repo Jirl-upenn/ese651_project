@@ -37,6 +37,7 @@ class DefaultQuadcopterStrategy:
         self._prev_y_drone_wrt_gate = torch.zeros(self.num_envs, device=self.device)
         self._prev_z_drone_wrt_gate = torch.zeros(self.num_envs, device=self.device)
         self._gate_passed_wrong_way = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._segment_start_pos = torch.zeros((self.num_envs, 3), device=self.device, dtype=torch.float32)
 
         # Initialize episode sums for logging if in training mode
         if self.cfg.is_train and hasattr(env, 'rew'):
@@ -205,6 +206,8 @@ class DefaultQuadcopterStrategy:
             self.env._desired_pos_w[ids_gate_passed, :2] = self.env._waypoints[self.env._idx_wp[ids_gate_passed], :2]
             self.env._desired_pos_w[ids_gate_passed, 2] = self.env._waypoints[self.env._idx_wp[ids_gate_passed], 2]
 
+            self._segment_start_pos[ids_gate_passed] = gate_pos[ids_gate_passed].clone()
+            
             # 3. Reset the prev_x_drone_wrt_gate for those drones to prevent false gate passages in the next steps. We can set it to the current local x position relative to the new gate, which we will calculate now:
             new_gate_pos = self.env._waypoints[self.env._idx_wp[ids_gate_passed], :3]
             new_gate_quat = self.env._waypoints_quat[self.env._idx_wp[ids_gate_passed], :]
@@ -226,29 +229,41 @@ class DefaultQuadcopterStrategy:
             
 
         # 2. PRO RACING PROGRESS
+        # ==================================================================
+        # NEW: Blended Progress (Optimal Racing Line + Gate Attraction)
+        # ==================================================================
         drone_pos = self.env._robot.data.root_link_pos_w
         drone_vel = self.env._robot.data.root_lin_vel_w
-        # calculate the direction vector from the drone to the gate in world frame
+        
+        # 1. Prev Gate to current gate Direction
+        track_segment_w = self.env._desired_pos_w - self._segment_start_pos
+        dist_segment = torch.linalg.norm(track_segment_w, dim=1, keepdim=True) + 1e-8
+        segment_dir = track_segment_w / dist_segment
+        # 2. Drone to the gate direction
         drone_to_gate_w = self.env._desired_pos_w - drone_pos
         dist_to_gate = torch.linalg.norm(drone_to_gate_w, dim=1, keepdim=True) + 1e-8
         dir_to_gate = drone_to_gate_w / dist_to_gate
-        
-        # Default progress reward
-        progress_speed = torch.sum(drone_vel * dir_to_gate, dim=1)
+        # 3. Blended direction: 70% along the optimal racing line (segment_dir) and 30% towards the gate (dir_to_gate)
+        blended_dir = (0.4 * segment_dir) + (0.6 * dir_to_gate)
+        blended_dir = blended_dir / torch.linalg.norm(blended_dir, dim=1, keepdim=True) 
+
+        # 4. 最终速度投影
+        progress_speed = torch.sum(drone_vel * blended_dir, dim=1)
+        # ==================================================================
 
         # ------------------------------------------------------------------
         # Waypoint 3 Reward Shaping
         # ------------------------------------------------------------------
         heading_to_gate_3 = (self.env._idx_wp == 3)
         # 1. Calculate horizontal progress (X and Y axes)
-        drone_to_gate_xy = drone_to_gate_w[:, :2]
-        dist_to_gate_xy = torch.linalg.norm(drone_to_gate_xy, dim=1, keepdim=True) + 1e-8
-        dir_to_gate_xy = drone_to_gate_xy / dist_to_gate_xy
-        progress_xy = torch.sum(drone_vel[:, :2] * dir_to_gate_xy, dim=1)
+        # drone_to_gate_xy = drone_to_gate_w[:, :2]
+        # dist_to_gate_xy = torch.linalg.norm(drone_to_gate_xy, dim=1, keepdim=True) + 1e-8
+        # dir_to_gate_xy = drone_to_gate_xy / dist_to_gate_xy
+        # progress_xy = torch.sum(drone_vel[:, :2] * dir_to_gate_xy, dim=1)
 
         # 2. Calculated custom progress for gate 3
         # gate3_custom_progress = (progress_xy * 1.5) + (progress_z * 1.0)
-        progress_speed = torch.where(heading_to_gate_3, progress_xy, progress_speed)
+        # progress_speed = torch.where(heading_to_gate_3, progress_xy, progress_speed)
 
         # 3. Relax the penalty for flying backward/inverted over the top
         is_negative_progress = progress_speed < 0
@@ -492,7 +507,7 @@ class DefaultQuadcopterStrategy:
         
         initial_x = x0_wp - x_rot
         initial_y = y0_wp - y_rot
-
+        
         # ==========================================================
         # Mix it up with some ground starts 
         # ==========================================================
@@ -566,6 +581,10 @@ class DefaultQuadcopterStrategy:
             initial_yaw + torch.empty(n_reset, device=self.device).uniform_(-0.3, 0.3) # Random Yaw
         )
         default_root_state[:, 3:7] = quat
+
+        self._segment_start_pos[env_ids, 0] = initial_x.clone()
+        self._segment_start_pos[env_ids, 1] = initial_y.clone()
+        self._segment_start_pos[env_ids, 2] = initial_z.clone()
 
         # ==========================================================
         # 🚨 DYNAMICS DOMAIN RANDOMIZATION
