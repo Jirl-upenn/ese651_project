@@ -20,5 +20,5 @@
 **/recordings/*
 
 # pack
-/pack/
+/pack*/
 pack.sh

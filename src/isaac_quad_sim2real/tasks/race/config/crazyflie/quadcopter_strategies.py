@@ -291,8 +291,8 @@ class DefaultQuadcopterStrategy:
         # Clamp the progress reward to prevent large spikes, and scale it down
         progress = torch.clamp(progress_speed, min=-10.0, max=20.0) * 0.2
 
-        # abs_speed = torch.linalg.norm(drone_vel, dim=1)
-        # speed_bonus = abs_speed * 0.05
+        abs_speed = torch.linalg.norm(drone_vel, dim=1)
+        speed_bonus = abs_speed * 0.05
 
         # Add a small penalty for changing actions too abruptly, to encourage smoother flying (but don't penalize it too much or it won't learn power loops!)
         # action_diff = torch.sum(torch.square(self.env._actions - self.env._previous_actions), dim=1) * 0.005
@@ -334,7 +334,7 @@ class DefaultQuadcopterStrategy:
             # TODO ----- START ----- Compute per-timestep rewards by multiplying with your reward scales (in train_race.py)
             rewards = {
                 "progress_goal": progress * self.env.rew['progress_goal_reward_scale'],
-                # "speed_bonus": speed_bonus * self.env.rew['progress_goal_reward_scale'],
+                "speed_bonus": speed_bonus * self.env.rew['progress_goal_reward_scale'],
                 "gate_passed": (gate_passed.float() * 10.0) * self.env.rew['progress_goal_reward_scale'],
                 # "penalty_action": -1 * action_diff * self.env.rew['progress_goal_reward_scale'],
                 "penalty_spin": -1 * spin_penalty * self.env.rew['progress_goal_reward_scale'],

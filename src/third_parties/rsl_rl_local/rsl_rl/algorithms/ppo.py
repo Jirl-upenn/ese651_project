@@ -210,23 +210,43 @@ class PPO:
             nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.max_grad_norm)
             self.optimizer.step()      # Update the neural network weights
 
+            # # ------------------------------------------------------------------
+            # # ADD (Adaptive Learning Rate Scheduler)
+            # # ------------------------------------------------------------------
+            # if self.schedule in ["adaptive", "empirical"]:
+            #     with torch.no_grad():
+            #         # Calculate Approximate KL Divergence
+            #         # Formula: log_prob_old - log_prob_new
+            #         kl_divergence = (prev_log_probs - current_log_probs).mean().item()
+
+            #     # If the policy has changed too drastically (taken too large a step, at risk of falling over) -> reduce learning rate
+            #     if kl_divergence > self.desired_kl * 2.0:
+            #         self.learning_rate = max(1e-5, self.learning_rate / 1.5)
+            #     # If the policy has almost not changed (learning too slowly) -> increase learning rate
+            #     # elif kl_divergence < self.desired_kl / 2.0 and kl_divergence >= 0.0:
+            #     #     self.learning_rate = min(1e-2, self.learning_rate * 1.5)
+            #     elif kl_divergence < self.desired_kl / 2.0 and kl_divergence >= 0.0:
+            #         self.learning_rate = min(3e-4, self.learning_rate * 1.5)
+            #     # Apply the calculated new learning rate to the PyTorch optimizer
+            #     for param_group in self.optimizer.param_groups:
+            #         param_group['lr'] = self.learning_rate
+            # # ------------------------------------------------------------------
+
             # ------------------------------------------------------------------
             # ADD (Adaptive Learning Rate Scheduler)
             # ------------------------------------------------------------------
             if self.schedule in ["adaptive", "empirical"]:
                 with torch.no_grad():
-                    # Calculate Approximate KL Divergence
-                    # Formula: log_prob_old - log_prob_new
+                    # 1. 绝对保留老师的原版公式，匹配他设定的 desired_kl
                     kl_divergence = (prev_log_probs - current_log_probs).mean().item()
 
-                # If the policy has changed too drastically (taken too large a step, at risk of falling over) -> reduce learning rate
+                # 2. 只有这里的防爆缸上限稍微卡死一点，从 1e-2 改成 2e-3
                 if kl_divergence > self.desired_kl * 2.0:
                     self.learning_rate = max(1e-5, self.learning_rate / 1.5)
-                # If the policy has almost not changed (learning too slowly) -> increase learning rate
                 elif kl_divergence < self.desired_kl / 2.0 and kl_divergence >= 0.0:
+                    # self.learning_rate = min(2e-3, self.learning_rate * 1.5)
                     self.learning_rate = min(1e-2, self.learning_rate * 1.5)
-
-                # Apply the calculated new learning rate to the PyTorch optimizer
+                # Apply the calculated new learning rate
                 for param_group in self.optimizer.param_groups:
                     param_group['lr'] = self.learning_rate
             # ------------------------------------------------------------------
