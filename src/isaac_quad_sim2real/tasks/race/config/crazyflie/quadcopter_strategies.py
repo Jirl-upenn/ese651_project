@@ -310,9 +310,20 @@ class DefaultQuadcopterStrategy:
         # Clamp the progress reward to prevent large spikes, and scale it down
         progress = torch.clamp(progress_speed, min=-10.0, max=20.0) * 0.2
 
+        # abs_speed = torch.linalg.norm(drone_vel, dim=1)
+        # speed_bonus = abs_speed * 0.075
+        # 1. 计算当前速度的标量大小
         abs_speed = torch.linalg.norm(drone_vel, dim=1)
-        speed_bonus = abs_speed * 0.075
-
+        # 2. 设置“竞速及格线” (4.5 m/s) 和“极限奖励线” (18.0 m/s)
+        # 超过 4.5m/s 的部分才算 bonus，最多奖励 (18.0 - 4.5) = 13.5 的空间
+        bonus_speed_diff = torch.clamp(abs_speed - 4.5, min=0.0, max=13.5)
+        
+        # 3. 核心机制：只有朝着正确的方向 (blended_dir) 飞，这笔速度奖金才生效！
+        # 这里用 progress_speed / (abs_speed + 1e-8) 来代表“有效速度的比例”
+        # 如果它横着飞，虽然 abs_speed 很高，但 progress_speed 接近 0，照样没分
+        direction_efficiency = torch.clamp(progress_speed / (abs_speed + 1e-8), min=0.0, max=1.0)
+        # 4. 计算最终的 effective speed bonus
+        speed_bonus = bonus_speed_diff * direction_efficiency * 0.2 + abs_speed * 0.075# 0.15 —> 0.5 ->0.25
         # Add a small penalty for changing actions too abruptly, to encourage smoother flying (but don't penalize it too much or it won't learn power loops!)
         # action_diff = torch.sum(torch.square(self.env._actions - self.env._previous_actions), dim=1) * 0.005
         # Spin Penalty
