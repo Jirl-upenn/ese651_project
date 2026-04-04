@@ -322,8 +322,19 @@ class DefaultQuadcopterStrategy:
         # 这里用 progress_speed / (abs_speed + 1e-8) 来代表“有效速度的比例”
         # 如果它横着飞，虽然 abs_speed 很高，但 progress_speed 接近 0，照样没分
         direction_efficiency = torch.clamp(progress_speed / (abs_speed + 1e-8), min=0.0, max=1.0)
+
+        # 1. 计算这段路的总体长度 (gate-to-gate distance)
+        gate2gate_dist = torch.linalg.norm(self.env._desired_pos_w - self._segment_start_pos, dim=1)
+        dist_to_gate_1d = dist_to_gate.squeeze()
+        # 2. 动态计算刹车触发距离 (Dynamic Braking Distance)
+        # 策略：取赛段长度的 40%
+        braking_dist_threshold = torch.clamp(gate2gate_dist * 0.3, max=5.0)
+        # 直接把原来的线性 clamp 加上 ** 2.0 或者 ** 3.0
+        base_ratio = torch.clamp(dist_to_gate_1d / (braking_dist_threshold + 1e-5), min=0.0, max=1.0)
+        # 使用平方衰减 (Quadratic Decay)
+        speed_allowance = base_ratio ** 2.0
         # 4. 计算最终的 effective speed bonus
-        speed_bonus = bonus_speed_diff * direction_efficiency * 0.2 + abs_speed * 0.075# 0.15 —> 0.5 ->0.25
+        speed_bonus = bonus_speed_diff * direction_efficiency * speed_allowance * 0.14 + abs_speed * 0.053# 0.15 —> 0.5 ->0.25
         # Add a small penalty for changing actions too abruptly, to encourage smoother flying (but don't penalize it too much or it won't learn power loops!)
         # action_diff = torch.sum(torch.square(self.env._actions - self.env._previous_actions), dim=1) * 0.005
         # Spin Penalty
@@ -613,9 +624,11 @@ class DefaultQuadcopterStrategy:
         )
         default_root_state[:, 3:7] = quat
 
-        self._segment_start_pos[env_ids, 0] = initial_x.clone()
-        self._segment_start_pos[env_ids, 1] = initial_y.clone()
-        self._segment_start_pos[env_ids, 2] = initial_z.clone()
+        # self._segment_start_pos[env_ids, 0] = initial_x.clone()
+        # self._segment_start_pos[env_ids, 1] = initial_y.clone()
+        # self._segment_start_pos[env_ids, 2] = initial_z.clone()
+        prev_gate_idxs = (waypoint_indices - 1) % self.env._waypoints.shape[0]
+        self._segment_start_pos[env_ids] = self.env._waypoints[prev_gate_idxs, :3].clone()
 
         # ==========================================================
         # 🚨 DYNAMICS DOMAIN RANDOMIZATION
