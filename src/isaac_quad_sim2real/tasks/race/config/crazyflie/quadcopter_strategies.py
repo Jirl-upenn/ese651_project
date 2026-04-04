@@ -334,7 +334,7 @@ class DefaultQuadcopterStrategy:
         # 使用平方衰减 (Quadratic Decay)
         speed_allowance = base_ratio ** 2.0
         # 4. 计算最终的 effective speed bonus
-        speed_bonus = bonus_speed_diff * direction_efficiency * speed_allowance * 0.14 + abs_speed * 0.053# 0.15 —> 0.5 ->0.25
+        speed_bonus = bonus_speed_diff * direction_efficiency * speed_allowance * 0.16 + abs_speed * 0.06# 0.15 —> 0.5 ->0.25
         # Add a small penalty for changing actions too abruptly, to encourage smoother flying (but don't penalize it too much or it won't learn power loops!)
         # action_diff = torch.sum(torch.square(self.env._actions - self.env._previous_actions), dim=1) * 0.005
         # Spin Penalty
