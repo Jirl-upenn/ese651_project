@@ -276,14 +276,14 @@ class DefaultQuadcopterStrategy:
         # ------------------------------------------------------------------
         heading_to_gate_3 = (self.env._idx_wp == 3)
         # 1. Calculate horizontal progress (X and Y axes)
-        drone_to_gate_xy = drone_to_gate_w[:, :2]
-        dist_to_gate_xy = torch.linalg.norm(drone_to_gate_xy, dim=1, keepdim=True) + 1e-8
-        dir_to_gate_xy = drone_to_gate_xy / dist_to_gate_xy
-        progress_xy = torch.sum(drone_vel[:, :2] * dir_to_gate_xy, dim=1)
+        # drone_to_gate_xy = drone_to_gate_w[:, :2]
+        # dist_to_gate_xy = torch.linalg.norm(drone_to_gate_xy, dim=1, keepdim=True) + 1e-8
+        # dir_to_gate_xy = drone_to_gate_xy / dist_to_gate_xy
+        # progress_xy = torch.sum(drone_vel[:, :2] * dir_to_gate_xy, dim=1)
 
         # 2. Calculated custom progress for gate 3
         # gate3_custom_progress = (progress_xy * 1.5) + (progress_z * 1.0)
-        progress_speed = torch.where(heading_to_gate_3, progress_xy, progress_speed)
+        # progress_speed = torch.where(heading_to_gate_3, progress_xy, progress_speed)
 
         # 3. Relax the penalty for flying backward/inverted over the top
         # is_negative_progress = progress_speed < 0
@@ -293,18 +293,18 @@ class DefaultQuadcopterStrategy:
 
         # 4. Add a bonus for climbing up during the approach to gate 3 to encourage power loops 
         # Calculate how high the drone is relative to the gate
-        relative_height = drone_pos[:, 2] - self.env._desired_pos_w[:, 2]
-        # 
-        is_in_front_of_gate = (curr_local_x < 0.0)
-        # Only True if the drone is heading to Gate 3 AND is less than 2.0 meters above it
-        is_climbing_phase = heading_to_gate_3 & (relative_height < 1) & is_in_front_of_gate# cant excute power loop w 0.8
-        # Reward positive Z velocity, but clamp negatives to 0 so we don't punish diving
-        z_vel_reward = torch.clamp(drone_vel[:, 2], min=0.0, max=3.0)
+        # relative_height = drone_pos[:, 2] - self.env._desired_pos_w[:, 2]
+        # # 
+        # is_in_front_of_gate = (curr_local_x < 0.0)
+        # # Only True if the drone is heading to Gate 3 AND is less than 2.0 meters above it
+        # is_climbing_phase = heading_to_gate_3 & (relative_height < 1) & is_in_front_of_gate# cant excute power loop w 0.8
+        # # Reward positive Z velocity, but clamp negatives to 0 so we don't punish diving
+        # z_vel_reward = torch.clamp(drone_vel[:, 2], min=0.0, max=3.0)
 
-        # Apply the reward ONLY during the climbing phase
-        climb_bonus = torch.where(is_climbing_phase, z_vel_reward * 0.8, 0.0)
+        # # Apply the reward ONLY during the climbing phase
         # climb_bonus = torch.where(is_climbing_phase, z_vel_reward * 0.8, 0.0)
-        progress_speed += climb_bonus
+        # # climb_bonus = torch.where(is_climbing_phase, z_vel_reward * 0.8, 0.0)
+        # progress_speed += climb_bonus
         # ------------------------------------------------------------------
 
         # Clamp the progress reward to prevent large spikes, and scale it down
