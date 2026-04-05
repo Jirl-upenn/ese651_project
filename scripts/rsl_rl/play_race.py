@@ -10,6 +10,8 @@
 from datetime import datetime
 import sys
 import os
+import cv2
+import glob
 local_rsl_path = os.path.abspath("src/third_parties/rsl_rl_local")
 if os.path.exists(local_rsl_path):
     sys.path.insert(0, local_rsl_path)
@@ -181,8 +183,8 @@ def main():
     # ==========================================================
 
     total_steps = 0
-    max_eval_steps = 3000
-
+    max_eval_steps = 1000
+    speed_history_for_video = []
     # simulate environment
     while simulation_app.is_running():
         # run everything in inference mode
@@ -192,6 +194,19 @@ def main():
             obs, rewards, dones, infos = env.step(actions)
             if hasattr(obs, "get"):  
                 obs = obs["policy"] 
+
+            # ==========================================================
+            # 🌟 REAL-TIME VELOCITY TRACKING        
+            # ==========================================================
+            world_vel = raw_env._robot.data.root_lin_vel_w
+            env_0_vel = world_vel[0]
+            speed = torch.linalg.norm(env_0_vel)
+            
+            print(f"\r🚀 [Env 0] Speed: {speed.item():.2f} m/s | Vel(x,y,z): [{env_0_vel[0]:.2f}, {env_0_vel[1]:.2f}, {env_0_vel[2]:.2f}]      ", end="", flush=True)
+
+            # 👉 NEW: Save speed for the video if recording is on
+            if args_cli.video:
+                speed_history_for_video.append(speed.item())
 
             # ==========================================================
             # 🌟 LAP DETECTION & TIMING LOGIC 
@@ -250,7 +265,56 @@ def main():
 
     # close the simulator
     env.close()
+    # ==========================================================
+    # 🌟 POST-PROCESS: BURN VELOCITY INTO VIDEO
+    # ==========================================================
+    if args_cli.video and len(speed_history_for_video) > 0:
+        print("\n🎬 Adding velocity overlay to generated video...")
+        
+        # 1. Search for all mp4 files in the current workspace
+        list_of_mp4s = glob.glob('**/*.mp4', recursive=True)
+        
+        # Filter out any videos we already added a HUD to previously
+        list_of_mp4s = [f for f in list_of_mp4s if "_with_HUD.mp4" not in f]
+        
+        if not list_of_mp4s:
+            print("⚠️ Could not find any generated MP4 files to add text.")
+        else:
+            # Get the most recently created video file
+            latest_video = max(list_of_mp4s, key=os.path.getctime)
+            output_video = latest_video.replace(".mp4", "_with_HUD.mp4")
+            print(f"Found latest video: {latest_video}")
 
+            # 2. Open the video with OpenCV
+            cap = cv2.VideoCapture(latest_video)
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(output_video, fourcc, fps, (width, height))
+
+            # 3. Read frames and draw text
+            frame_idx = 0
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                # Prevent index out of bounds
+                if frame_idx < len(speed_history_for_video):
+                    current_speed = speed_history_for_video[frame_idx]
+                    text = f"Speed: {current_speed:.2f} m/s"
+                    
+                    # Add text to the top-left corner (Yellow text, thickness 2)
+                    cv2.putText(frame, text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 
+                                1.0, (0, 255, 255), 2, cv2.LINE_AA)
+                
+                out.write(frame)
+                frame_idx += 1
+
+            cap.release()
+            out.release()
+            print(f"✅ Success! Video with velocity HUD saved to: {output_video}")
 
 if __name__ == "__main__":
     # run the main function

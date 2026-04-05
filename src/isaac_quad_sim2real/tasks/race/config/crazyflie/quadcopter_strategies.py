@@ -344,7 +344,7 @@ class DefaultQuadcopterStrategy:
         # 直接把原来的线性 clamp 加上 ** 2.0 或者 ** 3.0
         base_ratio = torch.clamp(dist_to_gate_1d / (braking_dist_threshold + 1e-5), min=0.0, max=1.0)
         # 使用平方衰减 (Quadratic Decay)
-        speed_allowance = base_ratio ** 2.0
+        speed_allowance = base_ratio ** 1
         # 4. 计算最终的 effective speed bonus
         speed_bonus = bonus_speed_diff * direction_efficiency * speed_allowance * 0.16 + abs_speed * 0.06# 0.15 —> 0.5 ->0.25
         # Add a small penalty for changing actions too abruptly, to encourage smoother flying (but don't penalize it too much or it won't learn power loops!)
