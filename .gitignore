@@ -18,3 +18,7 @@
 **/runs/*
 **/logs/*
 **/recordings/*
+
+# pack
+/pack*/
+pack.sh

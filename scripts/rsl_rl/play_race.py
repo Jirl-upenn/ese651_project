@@ -7,8 +7,11 @@
 
 """Launch Isaac Sim Simulator first."""
 
+from datetime import datetime
 import sys
 import os
+import cv2
+import glob
 local_rsl_path = os.path.abspath("src/third_parties/rsl_rl_local")
 if os.path.exists(local_rsl_path):
     sys.path.insert(0, local_rsl_path)
@@ -27,6 +30,7 @@ import cli_args  # isort: skip
 parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
 parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
 parser.add_argument("--video_length", type=int, default=2500, help="Length of the recorded video (in steps).")
+parser.add_argument("--video_name", type=str, default="play_video", help="Custom name for the generated video file.")
 parser.add_argument("--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations.")
 parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
@@ -85,8 +89,10 @@ def main():
     log_dir = os.path.dirname(resume_path)
 
     if args_cli.follow_robot == -1:
-        env_cfg.viewer.resolution = (1920, 1080)
+        # env_cfg.viewer.resolution = (1920, 1080)
+        env_cfg.viewer.resolution = (1280, 720)
         env_cfg.viewer.eye = (10.7, 0.4, 7.2)
+        # env_cfg.viewer.eye = (8, 2.0, 6.0)
         env_cfg.viewer.lookat = (-2.7, 0.5, -0.3)
     elif args_cli.follow_robot >= 0:
         env_cfg.viewer.eye = (-0.8, 0.8, 0.8)
@@ -107,15 +113,28 @@ def main():
     if isinstance(env.unwrapped, DirectMARLEnv):
         env = multi_agent_to_single_agent(env)
 
+    # 获取最底层的 QuadcopterEnv 实例
+    base_env = env.unwrapped 
+
+    # 强行把所有无人机的参数锁定为你代码里已有的极值：
+    # 比如测试 1：推力最小 + Z轴风阻最大 + Yaw轴控制最弱
+    # base_env._thrust_to_weight[:] = base_env._twr_min
+    # base_env._K_aero[:, 2] = base_env._k_aero_z_max
+    # base_env._kp_omega[:, 2] = base_env._kp_omega_y_min
+    
     # wrap for video recording
     if args_cli.video:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        unique_video_name = f"{args_cli.video_name}_{timestamp}"
+
         video_kwargs = {
             "video_folder": os.path.join(log_dir, "videos", "play"),
             "step_trigger": lambda step: step == 0,
             "video_length": args_cli.video_length,
             "disable_logger": True,
+            "name_prefix": unique_video_name,
         }
-        print("[INFO] Recording videos during training.")
+        print(f"[INFO] Recording video to: {unique_video_name}")
         print_dict(video_kwargs, nesting=4)
         env = gym.wrappers.RecordVideo(env, **video_kwargs)
 
@@ -145,29 +164,179 @@ def main():
     if hasattr(obs, "get"):  # Check if it's a TensorDict
         obs = obs["policy"]  # Extract the policy observation
     timestep = 0
+
+    # ==========================================================
+    # 🌟 NEW: Lap timer initialization
+    # ==========================================================
+    # Unwrap the environment to access the base DirectEnv attributes
+    raw_env = env.unwrapped
+    while hasattr(raw_env, 'unwrapped') and raw_env.unwrapped != raw_env:
+        raw_env = raw_env.unwrapped 
+
+    num_envs = raw_env.num_envs
+    device = raw_env.device
+    num_gates = raw_env._waypoints.shape[0]
+
+    # Initialize lap counters and previous gate indices
+    lap_counts = torch.zeros(num_envs, device=device, dtype=torch.long)
+    prev_gate_idx = raw_env._idx_wp.clone()
+    # ==========================================================
+
+    total_steps = 0
+    max_eval_steps = 1000
+    speed_history_for_video = []
     # simulate environment
     while simulation_app.is_running():
         # run everything in inference mode
+        # run everything in inference mode
         with torch.inference_mode():
-            # agent stepping
             actions = policy(obs)
-            # env stepping
             obs, rewards, dones, infos = env.step(actions)
-            # Extract tensor from TensorDict for policy
-            if hasattr(obs, "get"):  # Check if it's a TensorDict
-                obs = obs["policy"]  # Extract the policy observation
-        if args_cli.video:
-            timestep += 1
-            # Exit the play loop after recording one video
-            if timestep == args_cli.video_length:
-                break
+            if hasattr(obs, "get"):  
+                obs = obs["policy"] 
+
+            # ==========================================================
+            # 🌟 REAL-TIME VELOCITY TRACKING        
+            # ==========================================================
+            world_vel = raw_env._robot.data.root_lin_vel_w
+            env_0_vel = world_vel[0]
+            speed = torch.linalg.norm(env_0_vel)
+            
+            print(f"\r🚀 [Env 0] Speed: {speed.item():.2f} m/s | Vel(x,y,z): [{env_0_vel[0]:.2f}, {env_0_vel[1]:.2f}, {env_0_vel[2]:.2f}]      ", end="", flush=True)
+
+            # 👉 NEW: Save speed for the video if recording is on
+            if args_cli.video:
+                speed_history_for_video.append(speed.item())
+
+            # ==========================================================
+            # 🌟 LAP DETECTION & TIMING LOGIC 
+            # ==========================================================
+            curr_gate_idx = raw_env._idx_wp
+            
+            # 1. Check and add laps
+            just_finished_lap = (prev_gate_idx == num_gates - 1) & (curr_gate_idx == 0)
+            lap_counts[just_finished_lap] += 1
+            
+            # 2. Check for race completion FIRST
+            finished_3_laps = (lap_counts == 3)
+            if finished_3_laps.any():
+                dt = getattr(raw_env, "step_dt", getattr(raw_env, "dt", 0.02)) 
+                time_taken = raw_env.episode_length_buf[finished_3_laps] * dt
+                
+                finished_ids = finished_3_laps.nonzero(as_tuple=False).squeeze(-1)
+                for env_id, t in zip(finished_ids, time_taken):
+                    print(f"🏁 [LAP TIME] AMAZING! Drone {env_id.item()} finished 3 laps in {t.item():.2f} seconds!")
+                
+                lap_counts[finished_3_laps] = 0
+
+                # OPTIONAL: If you want the script to automatically close after 
+                # ANY drone finishes the race, uncomment the next line:
+                # break 
+
+            # 3. Handle crashes / resets
+            lap_counts[dones.bool()] = 0 
+            
+            # 4. Update for next frame
+            prev_gate_idx = curr_gate_idx.clone()
+
+            # ==========================================================
+            # 🌟 VIDEO RECORDING LOGIC (Fixed)
+            # ==========================================================
+            if args_cli.video:
+                timestep += 1
+                # We NO LONGER break the loop here! 
+                # The video wrapper will naturally stop recording new frames 
+                # once it hits 'video_length', but the simulation will stay open 
+                # so the drone can finish the race and print its time.
+            # ==========================================================
+            # 🌟 NEW: The Heartbeat & Timeout Logic
+            # ==========================================================
+            total_steps += 1
+            
+            # 1. The Heartbeat: Print status every 100 steps (~2 seconds of sim time)
+            if total_steps % 100 == 0:
+                best_drone_laps = lap_counts.max().item()
+                print(f"⏳ [STATUS] Simulating step {total_steps}/{max_eval_steps}... Best drone is currently on lap {best_drone_laps}/3")
+
+            # 2. The Timeout: Prevent infinite running if they keep crashing
+            if total_steps >= max_eval_steps:
+                print(f"⚠️ [TIMEOUT] Reached {max_eval_steps} steps. No drone managed to finish 3 laps. Exiting.")
+                break  # This breaks the while loop and closes the sim
 
     # close the simulator
     env.close()
+    # ==========================================================
+    # 🌟 POST-PROCESS: BURN VELOCITY INTO VIDEO
+    # ==========================================================
+    if args_cli.video and len(speed_history_for_video) > 0:
+        print("\n🎬 Adding velocity overlay to generated video...")
+        
+        # 1. Search for all mp4 files in the current workspace
+        list_of_mp4s = glob.glob('**/*.mp4', recursive=True)
+        
+        # Filter out any videos we already added a HUD to previously
+        list_of_mp4s = [f for f in list_of_mp4s if "_with_HUD.mp4" not in f]
+        
+        if not list_of_mp4s:
+            print("⚠️ Could not find any generated MP4 files to add text.")
+        else:
+            # Get the most recently created video file
+            latest_video = max(list_of_mp4s, key=os.path.getctime)
+            output_video = latest_video.replace(".mp4", "_with_HUD.mp4")
+            print(f"Found latest video: {latest_video}")
 
+            # 2. Open the video with OpenCV
+            cap = cv2.VideoCapture(latest_video)
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(output_video, fourcc, fps, (width, height))
+
+            # 3. Read frames and draw text
+            frame_idx = 0
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                # Prevent index out of bounds
+                if frame_idx < len(speed_history_for_video):
+                    current_speed = speed_history_for_video[frame_idx]
+                    text = f"Speed: {current_speed:.2f} m/s"
+                    
+                    # Add text to the top-left corner (Yellow text, thickness 2)
+                    cv2.putText(frame, text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 
+                                1.0, (0, 255, 255), 2, cv2.LINE_AA)
+                
+                out.write(frame)
+                frame_idx += 1
+
+            cap.release()
+            out.release()
+            print(f"✅ Success! Video with velocity HUD saved to: {output_video}")
 
 if __name__ == "__main__":
     # run the main function
     main()
     # close sim app
     simulation_app.close()
+
+'''
+python scripts/rsl_rl/play_race.py \
+    --task Isaac-Quadcopter-Race-v0 \
+    --num_envs 1 \
+    --load_run 2026-03-15_16-29-59 \
+    --checkpoint best_model.pt \
+    --video \
+    --video_length 1000 \
+    --headless \
+    --video_name "best_model"
+
+python scripts/rsl_rl/play_race.py \
+    --task Isaac-Quadcopter-Race-v0 \
+    --num_envs 1 \
+    --load_run 2026-03-15_16-29-59 \
+    --checkpoint best_model.pt \
+    --headless
+'''

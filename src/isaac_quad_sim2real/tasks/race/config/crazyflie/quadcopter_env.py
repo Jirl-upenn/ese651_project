@@ -10,7 +10,7 @@ import numpy as np
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation, ArticulationCfg, RigidObject, RigidObjectCfg
-from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
+from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg, ViewerCfg
 from isaaclab.envs.ui import BaseEnvWindow
 from isaaclab.markers import VisualizationMarkers
 from isaaclab.markers.visualization_markers import VisualizationMarkersCfg
@@ -145,6 +145,13 @@ class QuadcopterEnvCfg(DirectRLEnvCfg):
 
     ui_window_class_type = QuadcopterEnvWindow
 
+    # --- ADD THIS VIEWER BLOCK HERE ---
+    viewer = ViewerCfg(
+        eye=(0.0, -6.0, 3.0),    # 3 meters to the side, 1.5 meters up
+        lookat=(0.0, 0.0, 1)   # Looking right at the spawn point
+    )
+    # ----------------------------------
+
     # simulation
     sim: SimulationCfg = SimulationCfg(
         dt=1 / sim_rate_hz,
@@ -273,6 +280,8 @@ class QuadcopterEnv(DirectRLEnv):
 
         self._crashed = torch.zeros(self.num_envs, device=self.device, dtype=torch.int)
 
+        # self._gate_passed_wrong_way = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
+
         # Motor dynamics
         self.cfg.thrust_to_weight = 3.15
         r = self.cfg.arm_length * np.sqrt(2.0) / 2.0
@@ -332,7 +341,7 @@ class QuadcopterEnv(DirectRLEnv):
         self._ki_omega_y_value = self.cfg.ki_omega_y
         self._kd_omega_y_value = self.cfg.kd_omega_y
         self._tau_m_value = self.cfg.tau_m
-
+        
         # Initialize the strategy for rewards, observations, and resets
         # Strategy __init__ may set fixed parameter values using the _value attributes above
         self.strategy = self.cfg.strategy_class(self)
@@ -340,6 +349,7 @@ class QuadcopterEnv(DirectRLEnv):
         # Initialize other state variables
         self._pose_drone_wrt_gate = torch.zeros(self.num_envs, 3, device=self.device)
         self._prev_x_drone_wrt_gate = torch.ones(self.num_envs, device=self.device)
+
         self._initial_wp = 0
         self._n_run = 0
 
@@ -671,17 +681,22 @@ class QuadcopterEnv(DirectRLEnv):
         cond_max_h = self._robot.data.root_link_pos_w[:, 2] > self.cfg.max_altitude
 
         # self._crashed is computed in get_rewards() in quadcopter_strategies.py.
-        cond_crashed = self._crashed > 100
+        cond_crashed = self._crashed > 80
 
         #TODO ----- START ----- [OPTIONAL]
         # Consider adding additional _get_dones() conditions to influence training. Note that the additional conditions
         # will not be used during runtime for the official class race.
+
+        # drone flying through gate in wrong direction
+        cond_wrong_way = self.strategy._gate_passed_wrong_way
+
         #TODO ----- END ----- [OPTIONAL]
 
         died = (
             cond_max_h
           | cond_h_min_time
           | cond_crashed
+          | cond_wrong_way # added
         )
 
         # timeout conditions
