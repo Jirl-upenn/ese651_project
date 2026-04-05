@@ -255,12 +255,24 @@ class DefaultQuadcopterStrategy:
         dir_to_next_gate = drone_to_next_gate_w / dist_to_next_gate
 
         # 定义“前瞻半径”(Lookahead Radius)，比如 2.5 米
-        lookahead_radius = 2.5
+        lookahead_radius = 1.5 # 1 -> 1.5
         
+        # ==================================================================
+        # Waypoint 3 shaping
+        # ==================================================================
+        # Mask
+        heading_to_gate_3 = (self.env._idx_wp == 3)
+        is_in_front_of_gate = (curr_local_x < 0.0)
+
+        # 确保维度匹配 (如果 curr_local_x 是二维的 (num_envs, 1)，把 is_wp3 也变二维)
+        if is_in_front_of_gate.dim() > heading_to_gate_3.dim():
+            heading_to_gate_3 = heading_to_gate_3.unsqueeze(1)
+            
         # 计算视线转移权重 (w_next): 
         # - 当 dist_to_gate >= 2.5 时，w_next = 0 (100% 瞄准当前门)
         # - 当 dist_to_gate 接近 0 时，w_next 接近 0.75 (75% 看下一个门，保留 25% 确保能穿过当前门，防止错过打卡)
-        w_next = torch.clamp((lookahead_radius - dist_to_gate) / lookahead_radius, min=0.0, max=1.0) * 0.75
+        w_next = torch.clamp((lookahead_radius - dist_to_gate) / (lookahead_radius - 0.6), min=0.0, max=1.0) * 0.75
+        w_next = torch.where((heading_to_gate_3 & is_in_front_of_gate).view(-1, 1), torch.zeros_like(w_next), w_next)
         w_curr = 1.0 - w_next
 
         # 3. 动态混合方向 (Dynamic Blended Direction)
@@ -274,7 +286,7 @@ class DefaultQuadcopterStrategy:
         # ------------------------------------------------------------------
         # Waypoint 3 Reward Shaping
         # ------------------------------------------------------------------
-        heading_to_gate_3 = (self.env._idx_wp == 3)
+        # heading_to_gate_3 = (self.env._idx_wp == 3)
         # 1. Calculate horizontal progress (X and Y axes)
         # drone_to_gate_xy = drone_to_gate_w[:, :2]
         # dist_to_gate_xy = torch.linalg.norm(drone_to_gate_xy, dim=1, keepdim=True) + 1e-8
@@ -321,7 +333,7 @@ class DefaultQuadcopterStrategy:
         # 3. 核心机制：只有朝着正确的方向 (blended_dir) 飞，这笔速度奖金才生效！
         # 这里用 progress_speed / (abs_speed + 1e-8) 来代表“有效速度的比例”
         # 如果它横着飞，虽然 abs_speed 很高，但 progress_speed 接近 0，照样没分
-        direction_efficiency = torch.clamp(progress_speed / (abs_speed + 1e-8), min=0.0, max=1.0)
+        direction_efficiency = torch.clamp((progress_speed / (abs_speed + 1e-8)) * 1.18, min=0.0, max=1.0) # add (*1.18)
 
         # 1. 计算这段路的总体长度 (gate-to-gate distance)
         gate2gate_dist = torch.linalg.norm(self.env._desired_pos_w - self._segment_start_pos, dim=1)
