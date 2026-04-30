@@ -318,6 +318,6 @@ class DefaultQuadcopterStrategy:
             self.env._robot.data.root_link_state_w[env_ids, :3]
         )
 
-        self.env._prev_x_drone_wrt_gate[env_ids] = 1.0
+        self.env._prev_x_drone_wrt_gate[env_ids] = self.env._pose_drone_wrt_gate[env_ids, 0].clone()
 
         self.env._crashed[env_ids] = 0
